@@ -1,0 +1,36 @@
+from telethon import TelegramClient, events
+import logging
+
+logging.basicConfig(level=logging.INFO)
+
+# --- KONFIGURASI BOT ---
+API_ID = 28059570 # Ganti dengan API ID kamu
+API_HASH = '13f0f2945202b2063555f52006e6d468' # Ganti dengan API Hash kamu
+BOT_TOKEN = '7948291780:AAGMIaOD1cS2l_SZZq6DejAU14VlAWu-sDU' # Ganti dengan Bot Token dari BotFather
+
+# Inisialisasi klien bot
+bot = TelegramClient('simple_bot_session', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
+
+print("Bot is starting...")
+
+# --- HANDLER UNTUK PERINTAH /start ---
+@bot.on(events.NewMessage(pattern='/start'))
+async def start(event):
+    sender = await event.get_sender()
+    logging.info(f"Received /start from {sender.id}")
+    await event.reply('Halo! Saya bot sederhana. Kamu bisa mengirimiku pesan apa saja dan aku akan membalasnya.')
+
+# --- HANDLER UNTUK SEMUA PESAN LAIN (Echo) ---
+@bot.on(events.NewMessage)
+async def echo(event):
+    # Abaikan pesan yang berasal dari bot itu sendiri
+    if event.is_private and event.sender_id != bot.me.id:
+        sender = await event.get_sender()
+        logging.info(f"Received message from {sender.id}: {event.text}")
+        if event.text and not event.text.startswith('/'): # Balas hanya jika bukan perintah
+            await event.reply(f'Kamu bilang: {event.text}')
+
+print("Bot started! Waiting for messages...")
+
+# Jalankan bot sampai dihentikan secara manual
+bot.run_until_disconnected()
