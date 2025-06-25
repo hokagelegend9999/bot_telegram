@@ -1,34 +1,193 @@
 from telethon import TelegramClient, events
+from telethon.tl.types import ReplyKeyboardMarkup, KeyboardButton # Import ini
 import logging
+import sqlite3
+import datetime as DT
+import os
 
 logging.basicConfig(level=logging.INFO)
 
 # --- KONFIGURASI BOT ---
-API_ID = 28059570 # Ganti dengan API ID kamu
-API_HASH = '13f0f2945202b2063555f52006e6d468' # Ganti dengan API Hash kamu
-BOT_TOKEN = '7948291780:AAGMIaOD1cS2l_SZZq6DejAU14VlAWu-sDU' # Ganti dengan Bot Token dari BotFather
+API_ID = YOUR_API_ID # Ganti dengan App api_id kamu
+API_HASH = 'YOUR_API_HASH' # Ganti dengan App api_hash kamu
+BOT_TOKEN = 'YOUR_BOT_TOKEN' # Ganti dengan Bot Token dari BotFather
+
+# Nama file database
+DB_FILE = '/usr/bin/jualan.db'
 
 # Inisialisasi klien bot
-bot = TelegramClient('simple_bot_session', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
+bot = TelegramClient('jualan_bot_session', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
 print("Bot is starting...")
+
+# --- FUNGSI DATABASE ---
+def get_db_connection():
+    """Membuka koneksi ke database."""
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def init_db():
+    """Menginisialisasi database dan membuat tabel jika belum ada."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER PRIMARY KEY,
+            balance REAL DEFAULT 0.0,
+            registered_at TEXT
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+init_db()
+print("Database initialized.")
+
+
+# --- FUNGSI UNTUK MEMBUAT KEYBOARD MENU ---
+def get_main_menu_keyboard():
+    """Mengembalikan objek ReplyKeyboardMarkup untuk menu utama bot."""
+    buttons = [
+        [KeyboardButton('CREATE TRIAL'), KeyboardButton('CREATE AKUN')],
+        [KeyboardButton('RENEW AKUN'), KeyboardButton('MENU SHDWSK')], # Asumsi MENU SHDWSK dari contoh
+        [KeyboardButton('CHECK SERVICE'), KeyboardButton('OTHER SETTING')], # Asumsi dari contoh
+        [KeyboardButton('TOPUP SALDO [QRIS]')], # Ini tombol khusus untuk baris penuh
+        [KeyboardButton('REFRESH')]
+    ]
+    # Anda bisa menyesuaikan tombol sesuai keinginan Anda
+    # Jika ingin meniru persis screenshot, ada 'MENU VMESS', 'MENU VLESS', 'MENU TROJAN' dll.
+    # Namun, saya akan mengikuti struktur yang lebih umum dulu.
+    
+    # Contoh untuk meniru persis screenshot ROSI STORE VPN:
+    buttons_rosistore = [
+        [KeyboardButton('MENU SSH OVPN')],
+        [KeyboardButton('MENU VMESS'), KeyboardButton('MENU VLESS')],
+        [KeyboardButton('MENU TROJAN'), KeyboardButton('MENU SHDWSK')],
+        [KeyboardButton('CHECK SERVICE'), KeyboardButton('OTHER SETTING')],
+        [KeyboardButton('TOPUP SALDO [QRIS]')],
+        [KeyboardButton('REFRESH')]
+    ]
+    
+    return ReplyKeyboardMarkup(buttons_rosistore, resize=True, one_time_keyboard=False)
 
 # --- HANDLER UNTUK PERINTAH /start ---
 @bot.on(events.NewMessage(pattern='/start'))
 async def start(event):
-    sender = await event.get_sender()
-    logging.info(f"Received /start from {sender.id}")
-    await event.reply('Halo! Saya bot sederhana. Kamu bisa mengirimiku pesan apa saja dan aku akan membalasnya.')
+    user_id = event.sender_id
+    user_info = await bot.get_entity(user_id)
+    username = user_info.username if user_info.username else f"ID:{user_id}"
 
-# --- HANDLER UNTUK SEMUA PESAN LAIN (Echo) ---
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,))
+    existing_user = cursor.fetchone()
+
+    if existing_user:
+        logging.info(f"User {username} ({user_id}) already registered. Sending welcome back message with menu.")
+        await event.reply(
+            f'Selamat datang kembali, {username}!\n'
+            f'Silakan pilih opsi layanan:',
+            buttons=get_main_menu_keyboard() # Menampilkan keyboard menu
+        )
+    else:
+        registered_at = DT.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        cursor.execute("INSERT INTO users (user_id, balance, registered_at) VALUES (?, ?, ?)",
+                       (user_id, 0.0, registered_at))
+        conn.commit()
+        logging.info(f"New user registered: {username} ({user_id})")
+        await event.reply(
+            f'Halo, {username}! Selamat datang di bot kami!\n'
+            f'Anda berhasil terdaftar di sistem kami dengan saldo awal Rp 0.\n'
+            f'Silakan pilih opsi layanan:',
+            buttons=get_main_menu_keyboard() # Menampilkan keyboard menu
+        )
+    conn.close()
+
+# --- HANDLER UNTUK PERINTAH /menu (Jika user ingin menampilkan menu lagi) ---
+@bot.on(events.NewMessage(pattern='/menu'))
+async def show_menu(event):
+    user_id = event.sender_id
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,))
+    existing_user = cursor.fetchone()
+    conn.close()
+
+    if existing_user:
+        await event.reply(
+            'Silakan pilih opsi layanan:',
+            buttons=get_main_menu_keyboard()
+        )
+    else:
+        await event.reply('Maaf, Anda belum terdaftar. Silakan gunakan perintah /start terlebih dahulu.')
+
+
+# --- HANDLER UNTUK TOMBOL MENU (Placeholder) ---
+@bot.on(events.NewMessage(pattern='CREATE TRIAL'))
+async def create_trial_handler(event):
+    await event.reply('Anda memilih CREATE TRIAL. Fitur ini akan segera tersedia.')
+
+@bot.on(events.NewMessage(pattern='CREATE AKUN'))
+async def create_akun_handler(event):
+    await event.reply('Anda memilih CREATE AKUN. Proses pembuatan akun akan dimulai.')
+
+@bot.on(events.NewMessage(pattern='RENEW AKUN'))
+async def renew_akun_handler(event):
+    await event.reply('Anda memilih RENEW AKUN. Fitur perpanjangan akun akan segera dikembangkan.')
+
+@bot.on(events.NewMessage(pattern='MENU SSH OVPN'))
+async def menu_ssh_ovpn_handler(event):
+    await event.reply('Anda memilih MENU SSH OVPN. Detail opsi SSH OVPN akan ditampilkan.')
+
+@bot.on(events.NewMessage(pattern='MENU VMESS'))
+async def menu_vmess_handler(event):
+    await event.reply('Anda memilih MENU VMESS. Detail opsi VMESS akan ditampilkan.')
+
+@bot.on(events.NewMessage(pattern='MENU VLESS'))
+async def menu_vless_handler(event):
+    await event.reply('Anda memilih MENU VLESS. Detail opsi VLESS akan ditampilkan.')
+
+@bot.on(events.NewMessage(pattern='MENU TROJAN'))
+async def menu_trojan_handler(event):
+    await event.reply('Anda memilih MENU TROJAN. Detail opsi TROJAN akan ditampilkan.')
+
+@bot.on(events.NewMessage(pattern='MENU SHDWSK'))
+async def menu_shdwsk_handler(event):
+    await event.reply('Anda memilih MENU SHDWSK. Detail opsi SHADOWSOCKS akan ditampilkan.')
+
+@bot.on(events.NewMessage(pattern='CHECK SERVICE'))
+async def check_service_handler(event):
+    await event.reply('Anda memilih CHECK SERVICE. Informasi status layanan akan ditampilkan.')
+
+@bot.on(events.NewMessage(pattern='OTHER SETTING'))
+async def other_setting_handler(event):
+    await event.reply('Anda memilih OTHER SETTING. Opsi pengaturan lain akan disajikan.')
+
+@bot.on(events.NewMessage(pattern='TOPUP SALDO \\[QRIS\\]')) # Perhatikan double backslash untuk kurung siku
+async def topup_saldo_handler(event):
+    await event.reply('Anda memilih TOPUP SALDO [QRIS]. Instruksi top up akan diberikan.')
+
+@bot.on(events.NewMessage(pattern='REFRESH'))
+async def refresh_handler(event):
+    await event.reply('Anda memilih REFRESH. Data akan diperbarui.')
+
+# --- HANDLER UNTUK SEMUA PESAN LAIN (Echo, dimodifikasi untuk tidak mengganggu menu) ---
+# Handler ini harus diletakkan paling akhir agar tidak mengintervensi perintah/tombol
 @bot.on(events.NewMessage)
-async def echo(event):
+async def catch_all_messages(event):
     # Abaikan pesan yang berasal dari bot itu sendiri
+    # Abaikan jika pesan adalah perintah atau teks yang cocok dengan tombol (sudah di-handle di atas)
+    # Ini untuk pesan acak yang tidak dikenali
     if event.is_private and event.sender_id != bot.me.id:
-        sender = await event.get_sender()
-        logging.info(f"Received message from {sender.id}: {event.text}")
-        if event.text and not event.text.startswith('/'): # Balas hanya jika bukan perintah
-            await event.reply(f'Kamu bilang: {event.text}')
+        if event.text and not event.text.startswith('/') and \
+           event.text not in [btn.text for row in get_main_menu_keyboard().rows for btn in row.buttons]: # Cek apakah bukan teks tombol
+            logging.info(f"Received unhandled message from {event.sender_id}: {event.text}")
+            await event.reply(
+                'Maaf, saya tidak mengerti perintah itu. Silakan gunakan tombol menu atau perintah /menu.'
+            )
 
 print("Bot started! Waiting for messages...")
 
