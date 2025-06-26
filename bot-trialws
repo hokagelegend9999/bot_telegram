@@ -1,0 +1,280 @@
+#!/bin/bash
+
+# Skrip ini membuat akun VMess trial secara non-interaktif.
+# Semua parameter (username, masa aktif, kuota, limit IP) diatur di dalam skrip.
+
+# --- Definisi Warna (Tidak akan ditampilkan di Telegram) ---
+Green="\e[92;1m"
+RED="\033[31m"
+YELLOW="\033[33m"
+BLUE="\033[36m"
+FONT="\033[0m"
+GREENBG="\033[42;37m"
+REDBG="\033[41;37m"
+OK="${Green}--->${FONT}"
+ERROR="${RED}[ERROR]${FONT}"
+GRAY="\e[1;30m"
+NC='\e[0m'
+red='\e[1;31m'
+green='\e[0;32m'
+DF='\e[39m'
+Bold='\e[1m'
+Blink='\e[5m'
+yell='\e[33m'
+red='\e[31m'
+green='\e[32m'
+blue='\e[34m'
+PURPLE='\e[35m'
+cyan='\e[36m'
+Lred='\e[91m'
+Lgreen='\e[92m'
+Lyellow='\e[93m'
+NC='\e[0m'
+GREEN='\033[0;32m'
+ORANGE='\033[0;33m'
+LIGHT='\033[0;37m'
+grenbo="\e[92;1m"
+red() { echo -e "\\033[32;1m${*}\\033[0m"; }
+
+# --- Pengambilan Info Server (Dari skrip asli Anda) ---
+ISP=$(cat /etc/xray/isp 2>/dev/null || curl -s ipinfo.io/org | cut -d ' ' -f 2-10 || echo "Unknown ISP")
+CITY=$(cat /etc/xray/city 2>/dev/null || curl -s ipinfo.io/city || echo "Unknown City")
+
+# Mendapatkan Domain/IP
+source /var/lib/kyt/ipvps.conf 2>/dev/null || true
+if [[ -z "$IP" ]]; then
+    domain=$(cat /etc/xray/domain 2>/dev/null || curl -sS ipv4.icanhazip.com)
+else
+    domain=$IP
+fi
+
+# --- Parameter Trial (Diatur di dalam skrip) ---
+masaaktif=1
+Quota=1
+iplimit=10
+# Generate username unik
+user=Trial-VM`cat /dev/urandom | tr -dc '0-9' | head -c3`
+
+# --- Logika Pembuatan Akun VMess (Diadaptasi dari skrip asli Anda) ---
+
+# Cek apakah username sudah ada
+CLIENT_EXISTS=$(grep -w $user /etc/xray/config.json | wc -l)
+if [[ ${CLIENT_EXISTS} == '1' ]]; then
+    echo "Error: Username Trial-VM${user} sudah ada. Mohon coba lagi."
+    exit 1
+fi
+
+uuid=$(cat /proc/sys/kernel/random/uuid)
+exp=$(date -d "$masaaktif days" +"%Y-%m-%d")
+tgl=$(date -d "$masaaktif days" +"%d")
+bln=$(date -d "$masaaktif days" +"%b")
+thn=$(date -d "$masaaktif days" +"%Y")
+expe="$tgl $bln, $thn"
+tgl2=$(date +"%d")
+bln2=$(date +"%b")
+thn2=$(date +"%Y")
+tnggl="$tgl2 $bln2, $thn2"
+
+# Tambahkan konfigurasi ke Xray
+sed -i '/#vmess$/a\### '"$user $exp"'\
+},{"id": "'""$uuid""'","alterId": '"0"',"email": "'""$user""'"' /etc/xray/config.json
+sed -i '/#vmessgrpc$/a\### '"$user $exp"'\
+},{"id": "'""$uuid""'","alterId": '"0"',"email": "'""$user""'"' /etc/xray/config.json
+
+# Bangun konfigurasi JSON untuk Vmess Link
+asu=`cat<<EOF
+      {
+      "v": "2",
+      "ps": "${user}",
+      "add": "${domain}",
+      "port": "443",
+      "id": "${uuid}",
+      "aid": "0",
+      "net": "ws",
+      "path": "/vmess",
+      "type": "none",
+      "host": "${domain}",
+      "tls": "tls"
+}
+EOF`
+ask=`cat<<EOF
+      {
+      "v": "2",
+      "ps": "${user}",
+      "add": "${domain}",
+      "port": "80",
+      "id": "${uuid}",
+      "aid": "0",
+      "net": "ws",
+      "path": "/vmess",
+      "type": "none",
+      "host": "${domain}",
+      "tls": "none"
+}
+EOF`
+grpc=`cat<<EOF
+      {
+      "v": "2",
+      "ps": "${user}",
+      "add": "${domain}",
+      "port": "443",
+      "id": "${uuid}",
+      "aid": "0",
+      "net": "grpc",
+      "path": "vmess-grpc",
+      "type": "none",
+      "host": "${domain}",
+      "tls": "tls"
+}
+EOF`
+
+# Encode Vmess Link ke Base64
+vmesslink1="vmess://$(echo "$asu" | base64 -w 0)"
+vmesslink2="vmess://$(echo "$ask" | base64 -w 0)"
+vmesslink3="vmess://$(echo "$grpc" | base64 -w 0)"
+
+# Restart service Xray dan Cron
+systemctl restart xray > /dev/null 2>&1
+service cron restart > /dev/null 2>&1
+
+# Buat file detail akun di public_html
+mkdir -p /var/www/html/ # Pastikan direktori ini ada dan dapat ditulis
+cat >/var/www/html/vmess-$user.txt <<-END
+
+---------------------------------------------------
+# Format Vmess WS TLS
+
+- name: Vmess-$user-WS TLS
+  type: vmess
+  server: ${domain}
+  port: 443
+  uuid: ${uuid}
+  alterId: 0
+  cipher: auto
+  udp: true
+  tls: true
+  skip-cert-verify: true
+  servername: ${domain}
+  network: ws
+  ws-opts:
+    path: /vmess
+    headers:
+      Host: ${domain}
+
+# Format Vmess WS Non TLS
+
+- name: Vmess-$user-WS Non TLS
+  type: vmess
+  server: ${domain}
+  port: 80
+  uuid: ${uuid}
+  alterId: 0
+  cipher: auto
+  udp: true
+  tls: false
+  skip-cert-verify: false
+  servername: ${domain}
+  network: ws
+  ws-opts:
+    path: /vmess
+    headers:
+      Host: ${domain}
+
+# Format Vmess gRPC
+
+- name: Vmess-$user-gRPC (SNI)
+  server: ${domain}
+  port: 443
+  type: vmess
+  uuid: ${uuid}
+  alterId: 0
+  cipher: auto
+  network: grpc
+  tls: true
+  servername: ${domain}
+  skip-cert-verify: true
+  grpc-opts:
+    grpc-service-name: vmess-grpc
+
+---------------------------------------------------
+ Link Akun Vmess                   
+---------------------------------------------------
+Link TLS         : 
+${vmesslink1}
+---------------------------------------------------
+Link none TLS    : 
+${vmesslink2}
+---------------------------------------------------
+Link GRPC        : 
+${vmesslink3}
+---------------------------------------------------
+
+END
+if [ ! -e /etc/vmess ]; then
+  mkdir -p /etc/vmess
+fi
+
+if [[ $iplimit -gt 0 ]]; then
+    mkdir -p /etc/fvstore/limit/vmess/ip # Pastikan direktori ini ada
+    echo -e "$iplimit" > /etc/fvstore/limit/vmess/ip/$user
+else
+    echo > /dev/null
+fi
+
+if [ -z "${Quota}" ]; then
+  Quota="0"
+fi
+
+c=$(echo "${Quota}" | sed 's/[^0-9]*//g')
+d=$((${c} * 1024 * 1024 * 1024))
+
+if [[ ${c} != "0" ]]; then
+  echo "${d}" >/etc/vmess/${user}
+fi
+DATADB=$(cat /etc/vmess/.vmess.db 2>/dev/null | grep "^###" | grep -w "${user}" | awk '{print $2}')
+if [[ "${DATADB}" != '' ]]; then
+  sed -i "/\b${user}\b/d" /etc/vmess/.vmess.db
+fi
+echo "### ${user} ${exp} ${uuid} " >>/etc/vmess/.vmess.db
+
+# Bangun variabel TEXT untuk pesan Telegram (Ini yang akan dicetak ke stdout)
+TEXT="<code>---------------------------------------------------</code>
+<code>      XRAY/VMESS TRIAL Account Info</code>
+<code>---------------------------------------------------</code>
+<code>Remarks   : ${user}
+Domain    : ${domain}
+User Quota : ${Quota} GB
+Limit IP : ${iplimit} IP
+Port TLS  : 400-900
+Port NTLS : 80, 8080, 8081-9999
+id        : ${uuid}
+alterId   : 0
+Security  : auto
+network   : ws or grpc
+Path      : /Multi-Path
+Dynamic   : https://bugmu.com/path
+Name      : vmess-grpc</code>
+<code>---------------------------------------------------</code>
+<code> VMESS WS TLS Link</code>
+<code>---------------------------------------------------</code>
+<code>${vmesslink1}</code>
+<code>---------------------------------------------------</code>
+<code>VMESS WS NO TLS Link</code>
+<code>----------------------------------------------------------------------</code>
+<code>${vmesslink2}</code>
+<code>----------------------------------------------------------------------</code>
+<code> VMESS gRPC Link</code>
+<code>----------------------------------------------------------------------</code>
+<code>${vmesslink3}</code>
+<code>----------------------------------------------------------------------</code>
+Format OpenClash : https://${domain}:81/vmess-$user.txt
+<code>----------------------------------------------------------------------</code>
+Aktif Selama   : ${masaaktif} Hari
+Dibuat Pada    : ${tnggl}
+Berakhir Pada  : ${expe}
+<code>----------------------------------------------------------------------</code>
+"
+# Tidak perlu curl untuk mengirim ke Telegram di sini, bot Python yang akan melakukannya.
+
+# Cetak TEXT ke standard output agar bot Python bisa menangkapnya
+echo "$TEXT"
