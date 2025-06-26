@@ -56,8 +56,8 @@ logger.info("Database initialized.")
 def get_main_menu_keyboard():
     """Mengembalikan objek ReplyKeyboardMarkup untuk menu utama bot."""
     buttons = [
-        [KeyboardButton('MENU SSH OVPN')], # Ini untuk VMess/SSH umum
-        [KeyboardButton('MENU VMESS'), KeyboardButton('MENU VLESS')],
+        [KeyboardButton('MENU SSH OVPN')], 
+        [KeyboardButton('MENU VMESS'), KeyboardButton('MENU VLESS')], # MENU VMESS sekarang akan ke sub-menu
         [KeyboardButton('MENU TROJAN'), KeyboardButton('MENU SHDWSK')],
         [KeyboardButton('CHECK SERVICE'), KeyboardButton('OTHER SETTING')],
         [KeyboardButton('TOPUP SALDO [QRIS]')],
@@ -65,10 +65,22 @@ def get_main_menu_keyboard():
     ]
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True, one_time_keyboard=False)
 
+# Sub-menu untuk SSH OVPN (tidak lagi khusus VMess creation)
 def get_ssh_ovpn_menu_keyboard():
-    """Mengembalikan ReplyKeyboardMarkup untuk sub-menu SSH OVPN/VMess."""
+    """Mengembalikan ReplyKeyboardMarkup untuk sub-menu SSH OVPN."""
+    buttons = [
+        # Anda bisa menambahkan tombol khusus SSH OVPN di sini
+        [KeyboardButton('INFO SSH OVPN')], # Contoh tombol info
+        [KeyboardButton('Back to Main Menu')]
+    ]
+    return ReplyKeyboardMarkup(buttons, resize_keyboard=True, one_time_keyboard=False)
+
+# Sub-menu BARU untuk VMESS
+def get_vmess_creation_menu_keyboard():
+    """Mengembalikan ReplyKeyboardMarkup untuk sub-menu VMESS (pembuatan/trial)."""
     buttons = [
         [KeyboardButton('CREATE AKUN VMESS')], # Ini akan memicu VMess conversation
+        [KeyboardButton('CREATE TRIAL VMESS')], # Ini akan memicu VMess trial
         [KeyboardButton('Back to Main Menu')]
     ]
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True, one_time_keyboard=False)
@@ -81,15 +93,6 @@ def get_trojan_menu_keyboard():
         [KeyboardButton('Back to Main Menu')]
     ]
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True, one_time_keyboard=False)
-
-# Tambahkan fungsi untuk sub-menu lain jika diperlukan (VLESS, SHADOWSOCKS, dll.)
-# def get_vless_menu_keyboard():
-#     buttons = [
-#         [KeyboardButton('CREATE AKUN VLESS')],
-#         [KeyboardButton('Back to Main Menu')]
-#     ]
-#     return ReplyKeyboardMarkup(buttons, resize_keyboard=True, one_time_keyboard=False)
-
 
 # --- FUNGSI UNTUK MENJALANKAN PERINTAH SHELL MELALUI SSH ---
 async def run_ssh_command(command: str):
@@ -183,25 +186,35 @@ async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text('Maaf, Anda belum terdaftar. Silakan gunakan perintah /start terlebih dahulu.')
 
 # --- FUNGSI HELPER UNTUK HANDLER TOMBOL YANG MENJALANKAN SKRIP UMUM ---
-async def handle_general_script_button(update: Update, context: ContextTypes.DEFAULT_TYPE, script_path: str, message_loading: str, message_error: str) -> None:
+async def handle_general_script_button(update: Update, context: ContextTypes.DEFAULT_TYPE, script_path: str, message_loading: str, message_error: str, return_markup: ReplyKeyboardMarkup = None) -> None:
     """
     Fungsi helper untuk menangani penekanan tombol yang akan mengeksekusi skrip SSH.
     Digunakan untuk skrip yang tidak memerlukan input interaktif.
     """
+    if return_markup is None:
+        return_markup = get_main_menu_keyboard() # Default kembali ke menu utama
+
     await update.message.reply_text(message_loading)
     result = await run_ssh_command(f"bash {script_path}")
     if "Error:" in result or "Error server:" in result: # Check for specific error strings from bash or SSH
-        await update.message.reply_text(f"{message_error}\n`{result}`", parse_mode='Markdown', reply_markup=get_main_menu_keyboard())
+        await update.message.reply_text(f"{message_error}\n`{result}`", parse_mode='Markdown', reply_markup=return_markup)
     else:
-        await update.message.reply_text(result, parse_mode='HTML', reply_markup=get_main_menu_keyboard())
+        await update.message.reply_text(result, parse_mode='HTML', reply_markup=return_markup)
 
 
 # --- HANDLER UNTUK MENU UTAMA (Navigasi ke Sub-Menu) ---
 async def menu_ssh_ovpn_main(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Menampilkan sub-menu SSH OVPN/VMess."""
+    """Menampilkan sub-menu SSH OVPN."""
     await update.message.reply_text(
-        "Anda di Menu SSH OVPN/VMESS. Pilih opsi:",
+        "Anda di Menu SSH OVPN. Pilih opsi:",
         reply_markup=get_ssh_ovpn_menu_keyboard()
+    )
+
+async def menu_vmess_main(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Menampilkan sub-menu VMESS (untuk pembuatan/trial)."""
+    await update.message.reply_text(
+        "Anda di Menu VMESS. Pilih opsi:",
+        reply_markup=get_vmess_creation_menu_keyboard()
     )
 
 async def menu_trojan_main(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -220,11 +233,8 @@ async def back_to_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     )
 
 # --- HANDLER UNTUK TOMBOL MENU UMUM (tidak memerlukan input interaktif) ---
-async def menu_vmess_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # Jika MENU VMESS ini juga akan punya sub-menu, ubah seperti menu_ssh_ovpn_main
-    await handle_general_script_button(update, context, '/usr/bin/bot-cek-vmess', 
-                               message_loading='Memuat menu VMESS...',
-                               message_error='Gagal memuat menu VMESS.')
+# Perhatikan: menu_vmess_handler LAMA sekarang diganti oleh menu_vmess_main (untuk navigasi)
+# Jika ada skrip '/usr/bin/bot-cek-vmess', maka akan dipanggil di bawah 'CHECK VMESS SERVICE' di sub-menu VMESS.
 
 async def menu_vless_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await handle_general_script_button(update, context, '/usr/bin/bot-cek-vless',
@@ -248,17 +258,38 @@ async def other_setting_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
 # --- HANDLER UNTUK TOMBOL "CREATE TRIAL TROJAN" ---
 async def create_trial_trojan_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # Memastikan bot kembali ke sub-menu Trojan setelah trial
     await handle_general_script_button(update, context, '/usr/bin/bot-trial', # Path ke skrip trial Trojan
                                message_loading='Membuat akun trial Trojan...',
-                               message_error='Gagal membuat akun trial Trojan.')
+                               message_error='Gagal membuat akun trial Trojan.',
+                               return_markup=get_trojan_menu_keyboard())
+
+# --- HANDLER UNTUK TOMBOL "CREATE TRIAL VMESS" ---
+async def create_trial_vmess_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # Memastikan bot kembali ke sub-menu VMess setelah trial
+    await handle_general_script_button(update, context, '/usr/bin/bot-trialws', # Path ke skrip trial VMess WS
+                               message_loading='Membuat akun trial VMESS...',
+                               message_error='Gagal membuat akun VMESS.',
+                               return_markup=get_vmess_creation_menu_keyboard())
+
+# --- HANDLER KHUSUS untuk 'CHECK VMESS SERVICE' di sub-menu VMESS ---
+async def check_vmess_service_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await handle_general_script_button(update, context, '/usr/bin/bot-cek-vmess', # Ini adalah skrip yang sebelumnya error
+                               message_loading='Memeriksa status VMESS...',
+                               message_error='Gagal memeriksa status VMESS.',
+                               return_markup=get_vmess_creation_menu_keyboard())
+
 
 # --- HANDLER TOMBOL TANPA EKSEKUSI SKRIP (Untuk tombol yang hanya membalas teks) ---
-# Jika ada 'CREATE AKUN TROJAN' di sub-menu Trojan, handler-nya di sini
+async def info_ssh_ovpn_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handler untuk tombol INFO SSH OVPN di sub-menu SSH OVPN."""
+    await update.message.reply_text('Informasi tentang layanan SSH OVPN akan ditampilkan di sini.', reply_markup=get_ssh_ovpn_menu_keyboard())
+
+
 async def create_akun_trojan_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text('Fitur pembuatan akun Trojan penuh akan segera tersedia.', reply_markup=get_trojan_menu_keyboard())
 
 async def create_akun_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # Jika CREATE AKUN ini adalah umum dan bukan spesifik VMESS/SSH OVPN
     await update.message.reply_text('Anda memilih CREATE AKUN. Proses pembuatan akun akan dimulai.', reply_markup=get_main_menu_keyboard())
 
 async def renew_akun_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -274,7 +305,7 @@ async def refresh_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 VMESS_GET_USERNAME, VMESS_GET_EXPIRED_DAYS, VMESS_GET_QUOTA, VMESS_GET_IP_LIMIT = range(4)
 
 async def create_akun_vmess_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Memulai percakapan untuk pembuatan akun VMESS (dipicu dari sub-menu SSH OVPN)."""
+    """Memulai percakapan untuk pembuatan akun VMESS (dipicu dari sub-menu VMESS)."""
     await update.message.reply_text("Baik, mari kita buat akun VMESS baru.\n"
                                     "Silakan masukkan Username:")
     return VMESS_GET_USERNAME
@@ -345,9 +376,9 @@ async def vmess_get_ip_limit(update: Update, context: ContextTypes.DEFAULT_TYPE)
     result_ssh = await run_ssh_command(command) 
 
     if "Error:" in result_ssh or "Error server:" in result_ssh:
-        await update.message.reply_text(f"Gagal membuat akun VMESS:\n\n`{result_ssh}`", parse_mode='Markdown', reply_markup=get_ssh_ovpn_menu_keyboard()) # Kembali ke sub-menu
+        await update.message.reply_text(f"Gagal membuat akun VMESS:\n\n`{result_ssh}`", parse_mode='Markdown', reply_markup=get_vmess_creation_menu_keyboard()) # Kembali ke sub-menu VMESS
     else:
-        await update.message.reply_text(f"Akun VMESS berhasil dibuat!\n\n{result_ssh}", parse_mode='HTML', reply_markup=get_ssh_ovpn_menu_keyboard()) # Kembali ke sub-menu
+        await update.message.reply_text(f"Akun VMESS berhasil dibuat!\n\n{result_ssh}", parse_mode='HTML', reply_markup=get_vmess_creation_menu_keyboard()) # Kembali ke sub-menu VMESS
 
     context.user_data.clear()
     return ConversationHandler.END
@@ -360,8 +391,6 @@ async def cancel_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def unknown(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.message and update.message.from_user and not update.message.from_user.is_bot:
-        # Untuk unknown, kita harus coba kembali ke menu utama jika bukan dalam conversation
-        # Perlu lebih canggih untuk tahu di conversation mana dia
         await update.message.reply_text(
             'Maaf, saya tidak mengerti perintah itu. Silakan gunakan tombol menu atau perintah /menu.',
             reply_markup=get_main_menu_keyboard()
@@ -386,13 +415,14 @@ def main() -> None:
 
     # --- Handler untuk navigasi ke Sub-Menu ---
     application.add_handler(MessageHandler(filters.Regex(r'^MENU SSH OVPN$'), menu_ssh_ovpn_main))
+    application.add_handler(MessageHandler(filters.Regex(r'^MENU VMESS$'), menu_vmess_main)) # VMESS sekarang navigasi ke sub-menu
     application.add_handler(MessageHandler(filters.Regex(r'^MENU TROJAN$'), menu_trojan_main))
     # Tambahkan handler untuk menu utama lainnya yang akan menampilkan sub-menu
 
     # --- Handler untuk tombol 'Back to Main Menu' di semua sub-menu ---
     application.add_handler(MessageHandler(filters.Regex(r'^Back to Main Menu$'), back_to_main_menu))
 
-    # --- Conversation Handler untuk VMESS (dipicu dari sub-menu SSH OVPN) ---
+    # --- Conversation Handler untuk VMESS (dipicu dari sub-menu VMESS) ---
     vmess_conv_handler = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex(r'^CREATE AKUN VMESS$'), create_akun_vmess_start)],
         states={
@@ -401,21 +431,25 @@ def main() -> None:
             VMESS_GET_QUOTA: [MessageHandler(filters.TEXT & ~filters.COMMAND, vmess_get_quota)],
             VMESS_GET_IP_LIMIT: [MessageHandler(filters.TEXT & ~filters.COMMAND, vmess_get_ip_limit)],
         },
-        fallbacks=[CommandHandler("cancel", cancel_conversation), MessageHandler(filters.COMMAND, cancel_conversation)], # Semua perintah dianggap cancel
+        fallbacks=[CommandHandler("cancel", cancel_conversation), MessageHandler(filters.COMMAND, cancel_conversation)],
         allow_reentry=True 
     )
     application.add_handler(vmess_conv_handler)
-
 
     # --- Handler untuk tombol di Sub-Menu Trojan ---
     application.add_handler(MessageHandler(filters.Regex(r'^CREATE TRIAL TROJAN$'), create_trial_trojan_handler))
     application.add_handler(MessageHandler(filters.Regex(r'^CREATE AKUN TROJAN$'), create_akun_trojan_handler))
 
+    # --- Handler untuk tombol di Sub-Menu VMESS ---
+    application.add_handler(MessageHandler(filters.Regex(r'^CREATE TRIAL VMESS$'), create_trial_vmess_handler))
+    application.add_handler(MessageHandler(filters.Regex(r'^CHECK VMESS SERVICE$'), check_vmess_service_handler)) # BARU: Handler untuk cek VMESS
+
+
+    # --- Handler untuk tombol di Sub-Menu SSH OVPN ---
+    application.add_handler(MessageHandler(filters.Regex(r'^INFO SSH OVPN$'), info_ssh_ovpn_handler)) # BARU: Handler info SSH OVPN
+
 
     # --- Handler untuk tombol menu umum lainnya (tidak memerlukan input interaktif) ---
-    # Jika MENU VMESS, MENU VLESS, MENU SHDWSK tidak memiliki sub-menu, biarkan seperti ini
-    # Jika mereka juga akan memiliki sub-menu, ubah handler-nya menjadi navigasi (seperti menu_trojan_main)
-    application.add_handler(MessageHandler(filters.Regex(r'^MENU VMESS$'), menu_vmess_handler))
     application.add_handler(MessageHandler(filters.Regex(r'^MENU VLESS$'), menu_vless_handler))
     application.add_handler(MessageHandler(filters.Regex(r'^MENU SHDWSK$'), menu_shdwsk_handler))
     application.add_handler(MessageHandler(filters.Regex(r'^CHECK SERVICE$'), check_service_handler))
@@ -423,13 +457,7 @@ def main() -> None:
     application.add_handler(MessageHandler(filters.Regex(r'^TOPUP SALDO \[QRIS\]$'), topup_saldo_handler)) 
     application.add_handler(MessageHandler(filters.Regex(r'^REFRESH$'), refresh_handler))
 
-    # --- Handler untuk tombol-tombol yang mungkin belum memanggil skrip SSH (pindahkan ini jika sudah ada handler yang lebih spesifik) ---
-    # Tombol-tombol ini tidak lagi di main menu.
-    # application.add_handler(MessageHandler(filters.Regex(r'^CREATE AKUN$'), create_akun_handler))
-    # application.add_handler(MessageHandler(filters.Regex(r'^RENEW AKUN$'), renew_akun_handler))
-
     # Tanggapi semua pesan teks yang bukan perintah yang sudah ditangani (harus paling akhir)
-    # Ini akan membalas jika pesan tidak cocok dengan perintah atau regex handler lainnya.
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, unknown))
 
 
