@@ -56,8 +56,8 @@ logger.info("Database initialized.")
 def get_main_menu_keyboard():
     """Mengembalikan objek ReplyKeyboardMarkup untuk menu utama bot."""
     buttons = [
-        [KeyboardButton('MENU SSH OVPN')], 
-        [KeyboardButton('MENU VMESS'), KeyboardButton('MENU VLESS')], # MENU VMESS sekarang akan ke sub-menu
+        [KeyboardButton('MENU SSH OVPN')], # Ini untuk VMess/SSH umum
+        [KeyboardButton('MENU VMESS'), KeyboardButton('MENU VLESS')],
         [KeyboardButton('MENU TROJAN'), KeyboardButton('MENU SHDWSK')],
         [KeyboardButton('CHECK SERVICE'), KeyboardButton('OTHER SETTING')],
         [KeyboardButton('TOPUP SALDO [QRIS]')],
@@ -81,6 +81,7 @@ def get_vmess_creation_menu_keyboard():
     buttons = [
         [KeyboardButton('CREATE AKUN VMESS')], # Ini akan memicu VMess conversation
         [KeyboardButton('CREATE TRIAL VMESS')], # Ini akan memicu VMess trial
+        [KeyboardButton('CHECK VMESS SERVICE')], # Pindah dari menu umum ke sini
         [KeyboardButton('Back to Main Menu')]
     ]
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True, one_time_keyboard=False)
@@ -251,10 +252,12 @@ async def check_service_handler(update: Update, context: ContextTypes.DEFAULT_TY
                                message_loading='Memeriksa status layanan...',
                                message_error='Gagal memeriksa status layanan.')
 
+# --- HANDLER UNTUK TOMBOL 'OTHER SETTING' (akan memanggil bot-vps-info) ---
 async def other_setting_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await handle_general_script_button(update, context, '/usr/bin/other-setting',
-                               message_loading='Memuat opsi pengaturan lain...',
-                               message_error='Gagal memuat opsi pengaturan lain.')
+    await handle_general_script_button(update, context, '/usr/bin/bot-vps-info', # Path ke skrip bot-vps-info
+                               message_loading='Memuat informasi VPS...',
+                               message_error='Gagal memuat informasi VPS.',
+                               return_markup=get_main_menu_keyboard()) # Kembali ke menu utama setelah info
 
 # --- HANDLER UNTUK TOMBOL "CREATE TRIAL TROJAN" ---
 async def create_trial_trojan_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -415,9 +418,8 @@ def main() -> None:
 
     # --- Handler untuk navigasi ke Sub-Menu ---
     application.add_handler(MessageHandler(filters.Regex(r'^MENU SSH OVPN$'), menu_ssh_ovpn_main))
-    application.add_handler(MessageHandler(filters.Regex(r'^MENU VMESS$'), menu_vmess_main)) # VMESS sekarang navigasi ke sub-menu
+    application.add_handler(MessageHandler(filters.Regex(r'^MENU VMESS$'), menu_vmess_main)) 
     application.add_handler(MessageHandler(filters.Regex(r'^MENU TROJAN$'), menu_trojan_main))
-    # Tambahkan handler untuk menu utama lainnya yang akan menampilkan sub-menu
 
     # --- Handler untuk tombol 'Back to Main Menu' di semua sub-menu ---
     application.add_handler(MessageHandler(filters.Regex(r'^Back to Main Menu$'), back_to_main_menu))
@@ -431,10 +433,11 @@ def main() -> None:
             VMESS_GET_QUOTA: [MessageHandler(filters.TEXT & ~filters.COMMAND, vmess_get_quota)],
             VMESS_GET_IP_LIMIT: [MessageHandler(filters.TEXT & ~filters.COMMAND, vmess_get_ip_limit)],
         },
-        fallbacks=[CommandHandler("cancel", cancel_conversation), MessageHandler(filters.COMMAND, cancel_conversation)],
+        fallbacks=[CommandHandler("cancel", cancel_conversation), MessageHandler(filters.COMMAND, cancel_conversation)], 
         allow_reentry=True 
     )
     application.add_handler(vmess_conv_handler)
+
 
     # --- Handler untuk tombol di Sub-Menu Trojan ---
     application.add_handler(MessageHandler(filters.Regex(r'^CREATE TRIAL TROJAN$'), create_trial_trojan_handler))
@@ -442,18 +445,18 @@ def main() -> None:
 
     # --- Handler untuk tombol di Sub-Menu VMESS ---
     application.add_handler(MessageHandler(filters.Regex(r'^CREATE TRIAL VMESS$'), create_trial_vmess_handler))
-    application.add_handler(MessageHandler(filters.Regex(r'^CHECK VMESS SERVICE$'), check_vmess_service_handler)) # BARU: Handler untuk cek VMESS
+    application.add_handler(MessageHandler(filters.Regex(r'^CHECK VMESS SERVICE$'), check_vmess_service_handler)) 
 
 
     # --- Handler untuk tombol di Sub-Menu SSH OVPN ---
-    application.add_handler(MessageHandler(filters.Regex(r'^INFO SSH OVPN$'), info_ssh_ovpn_handler)) # BARU: Handler info SSH OVPN
+    application.add_handler(MessageHandler(filters.Regex(r'^INFO SSH OVPN$'), info_ssh_ovpn_handler))
 
 
     # --- Handler untuk tombol menu umum lainnya (tidak memerlukan input interaktif) ---
     application.add_handler(MessageHandler(filters.Regex(r'^MENU VLESS$'), menu_vless_handler))
     application.add_handler(MessageHandler(filters.Regex(r'^MENU SHDWSK$'), menu_shdwsk_handler))
     application.add_handler(MessageHandler(filters.Regex(r'^CHECK SERVICE$'), check_service_handler))
-    application.add_handler(MessageHandler(filters.Regex(r'^OTHER SETTING$'), other_setting_handler))
+    application.add_handler(MessageHandler(filters.Regex(r'^OTHER SETTING$'), other_setting_handler)) # Panggil bot-vps-info di sini
     application.add_handler(MessageHandler(filters.Regex(r'^TOPUP SALDO \[QRIS\]$'), topup_saldo_handler)) 
     application.add_handler(MessageHandler(filters.Regex(r'^REFRESH$'), refresh_handler))
 
