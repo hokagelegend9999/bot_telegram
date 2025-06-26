@@ -1,24 +1,31 @@
-from telethon import TelegramClient, events
-from telethon.tl.types import ReplyKeyboardMarkup, KeyboardButton # Import ini
 import logging
 import sqlite3
 import datetime as DT
 import os
+import paramiko
+import asyncio
 
-logging.basicConfig(level=logging.INFO)
+# Import PTB specific modules
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
+from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters, ConversationHandler
+
+# --- KONFIGURASI LOGGING ---
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logger = logging.getLogger(__name__)
 
 # --- KONFIGURASI BOT ---
-API_ID = YOUR_API_ID # Ganti dengan App api_id kamu
-API_HASH = 'YOUR_API_HASH' # Ganti dengan App api_hash kamu
-BOT_TOKEN = 'YOUR_BOT_TOKEN' # Ganti dengan Bot Token dari BotFather
+BOT_TOKEN = '7948291780:AAGMIaOD1cS2l_SZZq6DejAU14VlAWu-sDU' # Ganti dengan Bot Token dari BotFather
 
 # Nama file database
-DB_FILE = '/usr/bin/jualan.db'
+DB_FILE = '/usr/bin/jualan.db' 
 
-# Inisialisasi klien bot
-bot = TelegramClient('jualan_bot_session', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
-
-print("Bot is starting...")
+# --- KONFIGURASI SSH KE VPS ---
+SSH_HOST = "localhost"
+SSH_USERNAME = os.getenv("SSH_USERNAME", "root") 
+SSH_PASSWORD = os.getenv("SSH_PASSWORD", "") 
 
 # --- FUNGSI DATABASE ---
 def get_db_connection():
@@ -43,24 +50,11 @@ def init_db():
     conn.close()
 
 init_db()
-print("Database initialized.")
-
+logger.info("Database initialized.")
 
 # --- FUNGSI UNTUK MEMBUAT KEYBOARD MENU ---
 def get_main_menu_keyboard():
     """Mengembalikan objek ReplyKeyboardMarkup untuk menu utama bot."""
-    buttons = [
-        [KeyboardButton('CREATE TRIAL'), KeyboardButton('CREATE AKUN')],
-        [KeyboardButton('RENEW AKUN'), KeyboardButton('MENU SHDWSK')], # Asumsi MENU SHDWSK dari contoh
-        [KeyboardButton('CHECK SERVICE'), KeyboardButton('OTHER SETTING')], # Asumsi dari contoh
-        [KeyboardButton('TOPUP SALDO [QRIS]')], # Ini tombol khusus untuk baris penuh
-        [KeyboardButton('REFRESH')]
-    ]
-    # Anda bisa menyesuaikan tombol sesuai keinginan Anda
-    # Jika ingin meniru persis screenshot, ada 'MENU VMESS', 'MENU VLESS', 'MENU TROJAN' dll.
-    # Namun, saya akan mengikuti struktur yang lebih umum dulu.
-    
-    # Contoh untuk meniru persis screenshot ROSI STORE VPN:
     buttons_rosistore = [
         [KeyboardButton('MENU SSH OVPN')],
         [KeyboardButton('MENU VMESS'), KeyboardButton('MENU VLESS')],
@@ -69,15 +63,53 @@ def get_main_menu_keyboard():
         [KeyboardButton('TOPUP SALDO [QRIS]')],
         [KeyboardButton('REFRESH')]
     ]
-    
-    return ReplyKeyboardMarkup(buttons_rosistore, resize=True, one_time_keyboard=False)
+    return ReplyKeyboardMarkup(buttons_rosistore, resize_keyboard=True, one_time_keyboard=False)
+
+# --- FUNGSI UNTUK MENJALANKAN PERINTAH SHELL MELALUI SSH ---
+async def run_ssh_command(command: str):
+    """
+    Menjalankan perintah shell di VPS melalui SSH dan mengembalikan outputnya.
+    Menggunakan autentikasi kata sandi.
+    """
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+    try:
+        client.connect(hostname=SSH_HOST, username=SSH_USERNAME, password=SSH_PASSWORD)
+
+        logger.info(f"Executing SSH command: {command}")
+        stdin, stdout, stderr = client.exec_command(command)
+        
+        output = stdout.read().decode('utf-8').strip()
+        error = stderr.read().decode('utf-8').strip()
+
+        if error:
+            logger.error(f"Error from SSH command '{command}': {error}")
+            return f"Error saat menjalankan perintah di server:\n`{error}`"
+        
+        if not output:
+            return "Perintah berhasil dijalankan, tetapi tidak ada output yang dikembalikan."
+
+        return output
+
+    except paramiko.AuthenticationException:
+        logger.critical("Gagal otentikasi SSH. Pastikan username dan password SSH benar.")
+        return "Error server: Gagal otentikasi SSH. Mohon hubungi administrator."
+    except paramiko.SSHException as e:
+        logger.critical(f"Terjadi kesalahan SSH: {e}")
+        return f"Error server SSH: {e}"
+    except Exception as e:
+        logger.critical(f"Terjadi kesalahan tak terduga saat menjalankan perintah SSH: {e}")
+        return f"Terjadi kesalahan tak terduga di server: {e}"
+    finally:
+        if client:
+            client.close()
 
 # --- HANDLER UNTUK PERINTAH /start ---
-@bot.on(events.NewMessage(pattern='/start'))
-async def start(event):
-    user_id = event.sender_id
-    user_info = await bot.get_entity(user_id)
-    username = user_info.username if user_info.username else f"ID:{user_id}"
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Mengirim pesan sambutan saat perintah /start diterima."""
+    user_id = update.effective_user.id
+    username = update.effective_user.username if update.effective_user.username else f"ID:{user_id}"
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -86,30 +118,30 @@ async def start(event):
     existing_user = cursor.fetchone()
 
     if existing_user:
-        logging.info(f"User {username} ({user_id}) already registered. Sending welcome back message with menu.")
-        await event.reply(
+        logger.info(f"User {username} ({user_id}) already registered. Sending welcome back message with menu.")
+        await update.message.reply_text(
             f'Selamat datang kembali, {username}!\n'
             f'Silakan pilih opsi layanan:',
-            buttons=get_main_menu_keyboard() # Menampilkan keyboard menu
+            reply_markup=get_main_menu_keyboard()
         )
     else:
         registered_at = DT.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         cursor.execute("INSERT INTO users (user_id, balance, registered_at) VALUES (?, ?, ?)",
                        (user_id, 0.0, registered_at))
         conn.commit()
-        logging.info(f"New user registered: {username} ({user_id})")
-        await event.reply(
+        logger.info(f"New user registered: {username} ({user_id})")
+        await update.message.reply_text(
             f'Halo, {username}! Selamat datang di bot kami!\n'
             f'Anda berhasil terdaftar di sistem kami dengan saldo awal Rp 0.\n'
             f'Silakan pilih opsi layanan:',
-            buttons=get_main_menu_keyboard() # Menampilkan keyboard menu
+            reply_markup=get_main_menu_keyboard()
         )
     conn.close()
 
 # --- HANDLER UNTUK PERINTAH /menu (Jika user ingin menampilkan menu lagi) ---
-@bot.on(events.NewMessage(pattern='/menu'))
-async def show_menu(event):
-    user_id = event.sender_id
+async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Menampilkan keyboard menu."""
+    user_id = update.effective_user.id
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,))
@@ -117,79 +149,232 @@ async def show_menu(event):
     conn.close()
 
     if existing_user:
-        await event.reply(
+        await update.message.reply_text(
             'Silakan pilih opsi layanan:',
-            buttons=get_main_menu_keyboard()
+            reply_markup=get_main_menu_keyboard()
         )
     else:
-        await event.reply('Maaf, Anda belum terdaftar. Silakan gunakan perintah /start terlebih dahulu.')
+        await update.message.reply_text('Maaf, Anda belum terdaftar. Silakan gunakan perintah /start terlebih dahulu.')
 
+# --- FUNGSI HELPER UNTUK HANDLER TOMBOL YANG MENJALANKAN SKRIP UMUM ---
+async def handle_general_script_button(update: Update, context: ContextTypes.DEFAULT_TYPE, script_path: str, message_loading: str, message_error: str) -> None:
+    """
+    Fungsi helper untuk menangani penekanan tombol yang akan mengeksekusi skrip SSH.
+    Digunakan untuk skrip yang tidak memerlukan input interaktif.
+    """
+    await update.message.reply_text(message_loading)
+    result = await run_ssh_command(f"bash {script_path}")
+    if "Error" in result:
+        await update.message.reply_text(f"{message_error}\n{result}", parse_mode='Markdown')
+    else:
+        await update.message.reply_text(result, parse_mode='HTML')
 
-# --- HANDLER UNTUK TOMBOL MENU (Placeholder) ---
-@bot.on(events.NewMessage(pattern='CREATE TRIAL'))
-async def create_trial_handler(event):
-    await event.reply('Anda memilih CREATE TRIAL. Fitur ini akan segera tersedia.')
+# --- HANDLER UNTUK TOMBOL MENU UMUM (tidak memerlukan input interaktif) ---
+async def menu_vmess_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await handle_general_script_button(update, context, '/usr/bin/bot-cek-vmess', 
+                               message_loading='Memuat menu VMESS...',
+                               message_error='Gagal memuat menu VMESS.')
 
-@bot.on(events.NewMessage(pattern='CREATE AKUN'))
-async def create_akun_handler(event):
-    await event.reply('Anda memilih CREATE AKUN. Proses pembuatan akun akan dimulai.')
+async def menu_vless_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await handle_general_script_button(update, context, '/usr/bin/bot-cek-vless',
+                               message_loading='Memuat menu VLESS...',
+                               message_error='Gagal memuat menu VLESS.')
 
-@bot.on(events.NewMessage(pattern='RENEW AKUN'))
-async def renew_akun_handler(event):
-    await event.reply('Anda memilih RENEW AKUN. Fitur perpanjangan akun akan segera dikembangkan.')
+async def menu_trojan_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await handle_general_script_button(update, context, '/usr/bin/menu-trojan',
+                               message_loading='Memuat menu TROJAN...',
+                               message_error='Gagal memuat menu TROJAN.')
 
-@bot.on(events.NewMessage(pattern='MENU SSH OVPN'))
-async def menu_ssh_ovpn_handler(event):
-    await event.reply('Anda memilih MENU SSH OVPN. Detail opsi SSH OVPN akan ditampilkan.')
+async def menu_shdwsk_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await handle_general_script_button(update, context, '/usr/bin/bot-trialss',
+                               message_loading='Memuat menu SHADOWSOCKS...',
+                               message_error='Gagal memuat menu SHADOWSOCKS.')
 
-@bot.on(events.NewMessage(pattern='MENU VMESS'))
-async def menu_vmess_handler(event):
-    await event.reply('Anda memilih MENU VMESS. Detail opsi VMESS akan ditampilkan.')
+async def check_service_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await handle_general_script_button(update, context, '/usr/bin/resservice',
+                               message_loading='Memeriksa status layanan...',
+                               message_error='Gagal memeriksa status layanan.')
 
-@bot.on(events.NewMessage(pattern='MENU VLESS'))
-async def menu_vless_handler(event):
-    await event.reply('Anda memilih MENU VLESS. Detail opsi VLESS akan ditampilkan.')
+async def other_setting_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await handle_general_script_button(update, context, '/usr/bin/other-setting',
+                               message_loading='Memuat opsi pengaturan lain...',
+                               message_error='Gagal memuat opsi pengaturan lain.')
 
-@bot.on(events.NewMessage(pattern='MENU TROJAN'))
-async def menu_trojan_handler(event):
-    await event.reply('Anda memilih MENU TROJAN. Detail opsi TROJAN akan ditampilkan.')
+# --- HANDLER TOMBOL TANPA EKSEKUSI SKRIP (Untuk tombol yang hanya membalas teks) ---
 
-@bot.on(events.NewMessage(pattern='MENU SHDWSK'))
-async def menu_shdwsk_handler(event):
-    await event.reply('Anda memilih MENU SHDWSK. Detail opsi SHADOWSOCKS akan ditampilkan.')
+async def create_trial_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text('Anda memilih CREATE TRIAL. Fitur ini akan segera tersedia.')
 
-@bot.on(events.NewMessage(pattern='CHECK SERVICE'))
-async def check_service_handler(event):
-    await event.reply('Anda memilih CHECK SERVICE. Informasi status layanan akan ditampilkan.')
+async def create_akun_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text('Anda memilih CREATE AKUN. Proses pembuatan akun akan dimulai.')
 
-@bot.on(events.NewMessage(pattern='OTHER SETTING'))
-async def other_setting_handler(event):
-    await event.reply('Anda memilih OTHER SETTING. Opsi pengaturan lain akan disajikan.')
+async def renew_akun_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text('Anda memilih RENEW AKUN. Fitur perpanjangan akun akan segera dikembangkan.')
 
-@bot.on(events.NewMessage(pattern='TOPUP SALDO \\[QRIS\\]')) # Perhatikan double backslash untuk kurung siku
-async def topup_saldo_handler(event):
-    await event.reply('Anda memilih TOPUP SALDO [QRIS]. Instruksi top up akan diberikan.')
+async def topup_saldo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text('Anda memilih TOPUP SALDO [QRIS]. Instruksi top up akan diberikan.')
 
-@bot.on(events.NewMessage(pattern='REFRESH'))
-async def refresh_handler(event):
-    await event.reply('Anda memilih REFRESH. Data akan diperbarui.')
+async def refresh_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text('Anda memilih REFRESH. Data akan diperbarui.')
 
-# --- HANDLER UNTUK SEMUA PESAN LAIN (Echo, dimodifikasi untuk tidak mengganggu menu) ---
-# Handler ini harus diletakkan paling akhir agar tidak mengintervensi perintah/tombol
-@bot.on(events.NewMessage)
-async def catch_all_messages(event):
-    # Abaikan pesan yang berasal dari bot itu sendiri
-    # Abaikan jika pesan adalah perintah atau teks yang cocok dengan tombol (sudah di-handle di atas)
-    # Ini untuk pesan acak yang tidak dikenali
-    if event.is_private and event.sender_id != bot.me.id:
-        if event.text and not event.text.startswith('/') and \
-           event.text not in [btn.text for row in get_main_menu_keyboard().rows for btn in row.buttons]: # Cek apakah bukan teks tombol
-            logging.info(f"Received unhandled message from {event.sender_id}: {event.text}")
-            await event.reply(
-                'Maaf, saya tidak mengerti perintah itu. Silakan gunakan tombol menu atau perintah /menu.'
+# --- States untuk ConversationHandler "MENU SSH OVPN" (sebenarnya untuk VMESS) ---
+# Mengubah nama state agar lebih jelas sesuai kebutuhan skrip VMess
+VMESS_GET_USERNAME, VMESS_GET_EXPIRED_DAYS, VMESS_GET_QUOTA, VMESS_GET_IP_LIMIT = range(4)
+
+async def menu_ssh_ovpn_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Memulai percakapan untuk pembuatan akun VMESS (disesuaikan dari SSH OVPN)."""
+    await update.message.reply_text("Baik, mari kita buat akun VMESS baru.\n"
+                                    "Silakan masukkan Username:")
+    return VMESS_GET_USERNAME
+
+async def vmess_get_username(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Menerima username dan meminta masa aktif (days)."""
+    username = update.message.text
+    if not username:
+        await update.message.reply_text("Username tidak boleh kosong. Silakan masukkan Username:")
+        return VMESS_GET_USERNAME
+    
+    # Basic validation, you might want more robust checks (e.g., regex from bash script)
+    if not username.isalnum() and "_" not in username: # VMess script hanya validasi alphanumeric dan underscore
+        await update.message.reply_text("Username hanya boleh mengandung huruf, angka, dan underscore (_). Silakan masukkan Username yang valid:")
+        return VMESS_GET_USERNAME
+
+    context.user_data['vmess_username'] = username
+    await update.message.reply_text("Username diterima. Sekarang, masukkan Masa Aktif (dalam hari, contoh: 30 untuk 30 hari):")
+    return VMESS_GET_EXPIRED_DAYS
+
+async def vmess_get_expired_days(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Menerima masa aktif dan meminta limit kuota (GB)."""
+    expired_days_str = update.message.text
+    if not expired_days_str.isdigit():
+        await update.message.reply_text("Masa aktif harus berupa angka. Silakan masukkan Masa Aktif (contoh: 30):")
+        return VMESS_GET_EXPIRED_DAYS
+    
+    expired_days = int(expired_days_str)
+    context.user_data['vmess_expired_days'] = expired_days
+    await update.message.reply_text("Masa Aktif diterima. Sekarang, masukkan Limit Kuota (dalam GB, contoh: 10 untuk 10 GB):")
+    return VMESS_GET_QUOTA
+
+async def vmess_get_quota(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Menerima limit kuota dan meminta batas IP."""
+    quota_str = update.message.text
+    if not quota_str.isdigit():
+        await update.message.reply_text("Limit Kuota harus berupa angka. Silakan masukkan Limit Kuota (contoh: 10):")
+        return VMESS_GET_QUOTA
+    
+    quota = int(quota_str)
+    context.user_data['vmess_quota'] = quota
+    await update.message.reply_text("Limit Kuota diterima. Terakhir, masukkan Batas User (jumlah IP, contoh: 2 untuk 2 IP):")
+    return VMESS_GET_IP_LIMIT
+
+async def vmess_get_ip_limit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Menerima batas IP, menjalankan skrip, dan mengirim hasilnya."""
+    ip_limit_str = update.message.text
+    if not ip_limit_str.isdigit():
+        await update.message.reply_text("Batas User (IP) harus berupa angka. Silakan masukkan Batas User (contoh: 2):")
+        return VMESS_GET_IP_LIMIT
+    
+    ip_limit = int(ip_limit_str)
+    context.user_data['vmess_ip_limit'] = ip_limit
+
+    # Ambil semua data yang dibutuhkan dari context.user_data
+    username = context.user_data['vmess_username']
+    expired_days = context.user_data['vmess_expired_days']
+    quota = context.user_data['vmess_quota']
+
+    await update.message.reply_text(
+        f"Membuat akun VMESS dengan detail:\n"
+        f"Username: `{username}`\n"
+        f"Masa Aktif: `{expired_days}` hari\n"
+        f"Limit Kuota: `{quota}` GB\n"
+        f"Batas IP: `{ip_limit}`\n"
+        f"Mohon tunggu..."
+    )
+
+    # Jalankan perintah SSH ke skrip addws-bot dengan argumen yang sudah diurutkan sesuai kebutuhan skrip VMess
+    command = f"bash /usr/bin/addws-bot {username} {expired_days} {quota} {ip_limit}"
+    result_ssh = await run_ssh_command(command) # run_ssh_command mengembalikan string langsung
+
+    # Periksa error dari output skrip bash itu sendiri atau error SSH
+    if "Error:" in result_ssh or "Error server:" in result_ssh:
+        await update.message.reply_text(f"Gagal membuat akun VMESS:\n\n`{result_ssh}`", parse_mode='Markdown')
+    else:
+        await update.message.reply_text(f"Akun VMESS berhasil dibuat!\n\n{result_ssh}", parse_mode='HTML')
+
+    # Akhiri percakapan
+    context.user_data.clear() # Bersihkan data percakapan
+    return ConversationHandler.END
+
+async def cancel_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Membatalkan percakapan."""
+    await update.message.reply_text("Proses pembuatan akun dibatalkan.", reply_markup=get_main_menu_keyboard())
+    context.user_data.clear() # Bersihkan data percakapan
+    return ConversationHandler.END
+
+async def unknown(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.message and update.message.from_user and not update.message.from_user.is_bot:
+        current_buttons = [btn.text for row in get_main_menu_keyboard().keyboard for btn in row]
+        
+        if update.message.text and not update.message.text.startswith('/') and update.message.text not in current_buttons:
+            logger.info(f"Received unhandled message from {update.effective_user.id}: {update.message.text}")
+            await update.message.reply_text(
+                'Maaf, saya tidak mengerti perintah itu. Silakan gunakan tombol menu atau perintah /menu.',
+                reply_markup=get_main_menu_keyboard()
             )
 
-print("Bot started! Waiting for messages...")
+# --- FUNGSI UTAMA UNTUK MEMULAI BOT ---
+def main() -> None:
+    """Fungsi utama untuk memulai bot."""
+    logger.info("Bot is starting...")
 
-# Jalankan bot sampai dihentikan secara manual
-bot.run_until_disconnected()
+    if not SSH_USERNAME:
+        logger.error("Variabel lingkungan SSH_USERNAME tidak disetel atau kosong.")
+        exit(1)
+    if not SSH_PASSWORD:
+        logger.critical("Variabel lingkungan SSH_PASSWORD tidak disetel atau kosong. Bot tidak dapat memulai SSH.")
+        exit(1)
+    
+    application = Application.builder().token(BOT_TOKEN).build()
+
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("menu", show_menu))
+
+    # --- Conversation Handler untuk MENU SSH OVPN (untuk VMESS) ---
+    vmess_conv_handler = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex(r'^MENU SSH OVPN$'), menu_ssh_ovpn_start)],
+        states={
+            VMESS_GET_USERNAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, vmess_get_username)],
+            VMESS_GET_EXPIRED_DAYS: [MessageHandler(filters.TEXT & ~filters.COMMAND, vmess_get_expired_days)],
+            VMESS_GET_QUOTA: [MessageHandler(filters.TEXT & ~filters.COMMAND, vmess_get_quota)],
+            VMESS_GET_IP_LIMIT: [MessageHandler(filters.TEXT & ~filters.COMMAND, vmess_get_ip_limit)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel_conversation), MessageHandler(filters.COMMAND, unknown)],
+        allow_reentry=True 
+    )
+    application.add_handler(vmess_conv_handler)
+
+
+    # --- Handler untuk tombol menu umum lainnya (tidak memerlukan input interaktif) ---
+    application.add_handler(MessageHandler(filters.Regex(r'^MENU VMESS$'), menu_vmess_handler))
+    application.add_handler(MessageHandler(filters.Regex(r'^MENU VLESS$'), menu_vless_handler))
+    application.add_handler(MessageHandler(filters.Regex(r'^MENU TROJAN$'), menu_trojan_handler))
+    application.add_handler(MessageHandler(filters.Regex(r'^MENU SHDWSK$'), menu_shdwsk_handler))
+    application.add_handler(MessageHandler(filters.Regex(r'^CHECK SERVICE$'), check_service_handler))
+    application.add_handler(MessageHandler(filters.Regex(r'^OTHER SETTING$'), other_setting_handler))
+    application.add_handler(MessageHandler(filters.Regex(r'^TOPUP SALDO \[QRIS\]$'), topup_saldo_handler)) 
+    application.add_handler(MessageHandler(filters.Regex(r'^REFRESH$'), refresh_handler))
+
+    # --- Handler untuk tombol-tombol yang mungkin belum memanggil skrip SSH ---
+    application.add_handler(MessageHandler(filters.Regex(r'^CREATE TRIAL$'), create_trial_handler))
+    application.add_handler(MessageHandler(filters.Regex(r'^CREATE AKUN$'), create_akun_handler))
+    application.add_handler(MessageHandler(filters.Regex(r'^RENEW AKUN$'), renew_akun_handler))
+
+    # Tanggapi semua pesan teks yang bukan perintah yang sudah ditangani (harus paling akhir)
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, unknown))
+
+
+    logger.info("Bot running in polling mode...")
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
+
+if __name__ == "__main__":
+    main()
