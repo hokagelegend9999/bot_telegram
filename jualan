@@ -520,7 +520,7 @@ async def backup_vps_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await handle_general_script_button(
         update, 
         context, 
-        '/usr/bin/backup-bot.sh', # Path to your backup script
+        '/usr/bin/bot-backup', # Path to your backup script
         message_loading='Memulai proses backup VPS. Ini mungkin memakan waktu beberapa menit...',
         message_error='❌ Gagal melakukan backup VPS.',
         return_markup=get_settings_menu_keyboard() # Return to settings menu after
