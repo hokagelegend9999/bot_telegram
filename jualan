@@ -52,12 +52,15 @@ GROUP_TELEGRAM_LINK = "https://t.me/hokagelegend1"
 VMESS_GET_USERNAME, VMESS_GET_EXPIRED_DAYS, VMESS_GET_QUOTA, VMESS_GET_IP_LIMIT = range(4)
 # Shadowsocks
 SHADOWSOCKS_GET_USERNAME, SHADOWSOCKS_GET_EXPIRED_DAYS, SHADOWSOCKS_GET_QUOTA = range(4, 7) 
+# SSH OVPN
+SSH_OVPN_GET_USERNAME, SSH_OVPN_GET_PASSWORD, SSH_OVPN_GET_EXPIRED_DAYS, SSH_OVPN_GET_QUOTA, SSH_OVPN_GET_IP_LIMIT = range(7, 12)
 # Admin: Add Balance
-ADD_BALANCE_GET_USER_ID, ADD_BALANCE_GET_AMOUNT = range(7, 9)
+ADD_BALANCE_GET_USER_ID, ADD_BALANCE_GET_AMOUNT = range(12, 14)
 # Admin: Check Balance
-CHECK_BALANCE_GET_USER_ID = range(9, 10)
+CHECK_BALANCE_GET_USER_ID = range(14, 15)
 # Admin: View User Transactions
-VIEW_USER_TX_GET_USER_ID = range(10, 11)
+VIEW_USER_TX_GET_USER_ID = range(15, 16)
+
 
 # --- FUNGSI DATABASE ---
 def get_db_connection():
@@ -187,9 +190,11 @@ def get_manage_users_menu_keyboard():
     ]
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True, one_time_keyboard=False)
 
+
 def get_ssh_ovpn_menu_keyboard():
     """Mengembalikan ReplyKeyboardMarkup untuk sub-menu SSH OVPN."""
     buttons = [
+        [KeyboardButton('➕ CREATE AKUN SSH')], 
         [KeyboardButton('ℹ️ INFO SSH OVPN')], 
         [KeyboardButton('🔙 Back to Main Menu')]
     ]
@@ -217,11 +222,12 @@ def get_trojan_menu_keyboard():
 def get_shadowsocks_menu_keyboard():
     """Mengembalikan ReplyKeyboardMarkup untuk sub-menu Shadowsocks."""
     buttons = [
-        [KeyboardButton('➕ CREATE AKUN SHDWSK')], # Ini akan memicu SS conversation
-        [KeyboardButton('🆓 CREATE TRIAL SHDWSK')], # Jika ada trial SS
+        [KeyboardButton('➕ CREATE AKUN SHDWSK')], 
+        [KeyboardButton('🆓 CREATE TRIAL SHDWSK')], 
         [KeyboardButton('🔙 Back to Main Menu')]
     ]
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True, one_time_keyboard=False)
+
 
 # --- FUNGSI UNTUK MENJALANKAN PERINTAH SHELL MELALUI SSH ---
 async def run_ssh_command(command: str):
@@ -258,7 +264,9 @@ async def run_ssh_command(command: str):
         if client:
             client.close()
 
-# --- HANDLER UNTUK PERINTAH /start ---
+# --- DEFINISI SEMUA HANDLER (ASYNC DEF) DI SINI ---
+
+# Handler Perintah Umum dan Navigasi (ini bisa di awal)
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Mengirim pesan sambutan saat perintah /start diterima."""
     user_id = update.effective_user.id
@@ -296,7 +304,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             reply_markup=get_main_menu_keyboard(), parse_mode='HTML'
         )
 
-# --- HANDLER UNTUK PERINTAH /menu ---
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Menampilkan keyboard menu sesuai role."""
     user_id = update.effective_user.id
@@ -320,7 +327,31 @@ async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     else:
         await update.message.reply_text('Maaf, Anda belum terdaftar. Silakan gunakan perintah /start terlebih dahulu.')
 
-# --- FUNGSI HELPER UNTUK HANDLER TOMBOL YANG MENJALANKAN SKRIP UMUM ---
+async def cancel_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Membatalkan percakapan yang sedang berlangsung."""
+    user_id = update.effective_user.id
+    if is_admin(user_id):
+        await update.message.reply_text(
+            '✅ Operasi dibatalkan.',
+            reply_markup=get_admin_main_menu_keyboard()
+        )
+    else:
+        await update.message.reply_text(
+            '✅ Operasi dibatalkan.',
+            reply_markup=get_main_menu_keyboard()
+        )
+    context.user_data.clear()
+    return ConversationHandler.END
+
+async def unknown(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    current_keyboard = get_admin_main_menu_keyboard() if is_admin(user_id) else get_main_menu_keyboard()
+    if update.message and update.message.from_user and not update.message.from_user.is_bot:
+        await update.message.reply_text(
+            '❓ Maaf, saya tidak mengerti perintah itu. Silakan gunakan tombol menu atau perintah /menu.',
+            reply_markup=current_keyboard
+        )
+
 async def handle_general_script_button(update: Update, context: ContextTypes.DEFAULT_TYPE, script_path: str, message_loading: str, message_error: str, return_markup: ReplyKeyboardMarkup = None) -> None:
     """
     Fungsi helper untuk menangani penekanan tombol yang akan mengeksekusi skrip SSH.
@@ -337,7 +368,8 @@ async def handle_general_script_button(update: Update, context: ContextTypes.DEF
     else:
         await update.message.reply_text(result, parse_mode='HTML', reply_markup=return_markup)
 
-# --- HANDLER UNTUK MENU UTAMA (Navigasi ke Sub-Menu) ---
+
+# Handlers Navigasi Sub-Menu
 async def menu_ssh_ovpn_main(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Menampilkan sub-menu SSH OVPN."""
     await update.message.reply_text(
@@ -366,7 +398,6 @@ async def menu_shdwsk_main(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         reply_markup=get_shadowsocks_menu_keyboard(), parse_mode='HTML'
     )
 
-# --- Handler untuk tombol 'Back to Main Menu' ---
 async def back_to_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Mengembalikan ke menu utama sesuai role."""
     user_id = update.effective_user.id
@@ -381,18 +412,20 @@ async def back_to_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             reply_markup=get_main_menu_keyboard(), parse_mode='HTML'
         )
 
-# --- HANDLER UNTUK TOMBOL MENU UMUM (tidak memerlukan input interaktif) ---
+# HANDLER UTK TOMBOL MENU UMUM (tidak memerlukan input interaktif)
 async def menu_vless_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await handle_general_script_button(update, context, '/usr/bin/bot-cek-vless',
                                message_loading='Memuat menu VLESS...',
                                message_error='❌ Gagal memuat menu VLESS.')
 
+# Ini seharusnya tidak lagi dipanggil langsung oleh tombol utama jika ada sub-menu.
 async def menu_shdwsk_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await handle_general_script_button(update, context, '/usr/bin/bot-trialss',
+    await handle_general_script_button(update, context, '/usr/bin/bot-trialss', # Menggunakan bot-trialss untuk cek
                                message_loading='Memuat menu SHADOWSOCKS...',
                                message_error='❌ Gagal memuat menu SHADOWSOCKS.')
 
-# --- HANDLER KHUSUS ADMIN (diaktifkan di menu admin) ---
+
+# HANDLER KHUSUS ADMIN
 async def check_service_admin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     if not is_admin(user_id):
@@ -413,7 +446,6 @@ async def other_setting_admin_handler(update: Update, context: ContextTypes.DEFA
                                message_error='❌ Gagal memuat informasi VPS.',
                                return_markup=get_admin_main_menu_keyboard())
 
-# --- HANDLER UNTUK NAVIGASI KE SUB-MENU MANAGE USERS ---
 async def manage_users_main(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     if not is_admin(user_id):
@@ -424,28 +456,25 @@ async def manage_users_main(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         reply_markup=get_manage_users_menu_keyboard(), parse_mode='HTML'
     )
 
-# --- HANDLER UNTUK TOMBOL "CREATE TRIAL TROJAN" ---
 async def create_trial_trojan_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await handle_general_script_button(update, context, '/usr/bin/bot-trial',
                                message_loading='Membuat akun trial Trojan...',
                                message_error='❌ Gagal membuat akun trial Trojan.',
                                return_markup=get_trojan_menu_keyboard())
 
-# --- HANDLER UNTUK TOMBOL "CREATE TRIAL VMESS" ---
 async def create_trial_vmess_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await handle_general_script_button(update, context, '/usr/bin/bot-trialws',
                                message_loading='Membuat akun trial VMESS...',
                                message_error='❌ Gagal membuat akun VMESS.',
                                return_markup=get_vmess_creation_menu_keyboard())
 
-# --- HANDLER KHUSUS untuk 'CHECK VMESS SERVICE' di sub-menu VMESS ---
 async def check_vmess_service_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await handle_general_script_button(update, context, '/usr/bin/bot-cek-vmess',
                                message_loading='Memeriksa status VMESS...',
                                message_error='❌ Gagal memeriksa status VMESS.',
                                return_markup=get_vmess_creation_menu_keyboard())
 
-# --- HANDLER TOMBOL TANPA EKSEKUSI SKRIP (Untuk tombol yang hanya membalas teks) ---
+
 async def info_ssh_ovpn_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handler untuk tombol INFO SSH OVPN di sub-menu SSH OVPN."""
     await update.message.reply_text('ℹ️ Informasi tentang layanan SSH OVPN akan ditampilkan di sini.', reply_markup=get_ssh_ovpn_menu_keyboard())
@@ -453,121 +482,98 @@ async def info_ssh_ovpn_handler(update: Update, context: ContextTypes.DEFAULT_TY
 async def create_akun_trojan_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text('⚙️ Fitur pembuatan akun Trojan penuh akan segera tersedia.', reply_markup=get_trojan_menu_keyboard())
 
-# --- HANDLER UNTUK TOMBOL USER ---
-async def view_transactions_user_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Menampilkan riwayat transaksi pengguna"""
-    user_id = update.effective_user.id
-    transactions = get_user_transactions(user_id)
-    
-    if not transactions:
-        await update.message.reply_text("📜 Anda belum memiliki riwayat transaksi.", reply_markup=get_main_menu_keyboard())
-        return
-    
-    message = "📜 <b>Riwayat Transaksi Terakhir Anda</b>\n\n"
-    for tx in transactions:
-        message += (
-            f"📝 Tipe: {tx['type']}\n"
-            f"💰 Jumlah: Rp {tx['amount']:,.0f}\n"
-            f"⏱️ Waktu: {tx['timestamp']}\n"
-            f"📋 Deskripsi: {tx.get('description', '-')}\n"
-            f"──────────────────\n"
-        )
-    
-    await update.message.reply_text(message, parse_mode='HTML', reply_markup=get_main_menu_keyboard())
+async def create_akun_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text('📝 Anda memilih CREATE AKUN. Proses pembuatan akun akan dimulai.', reply_markup=get_main_menu_keyboard())
 
-async def check_balance_user_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Menampilkan saldo pengguna"""
+async def renew_akun_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text('🔄 Anda memilih RENEW AKUN. Fitur perpanjangan akun akan segera dikembangkan.', reply_markup=get_main_menu_keyboard())
+
+async def topup_saldo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
-    balance = get_user_balance(user_id)
+    current_balance = get_user_balance(user_id)
+    
+    caption_text = (
+        f"<b>💰 Top Up Saldo Akun VPN Anda!</b>\n"
+        f"Saldo Anda saat ini: <b>Rp {current_balance:,.0f}</b>.\n\n"
+        f"Untuk top up, silakan transfer ke rekening berikut:\n"
+        f"<b>Nama Bank:</b> [Nama Bank Anda]\n" # <--- GANTI INI
+        f"<b>Nomor Rekening:</b> [Nomor Rekening Anda]\n" # <--- GANTI INI
+        f"<b>Atas Nama:</b> [Nama Pemilik Rekening]\n\n" # <--- GANTI INI
+        f"Setelah transfer, silakan kirim <b>bukti transfer</b> beserta <i>Telegram User ID Anda</i> ke Admin:\n"
+        f"📞 <b>Admin Telegram:</b> <a href=\"https://t.me/{TELEGRAM_ADMIN_USERNAME}\">@{TELEGRAM_ADMIN_USERNAME}</a>\n"
+        f"💬 <b>Admin WhatsApp:</b> <a href=\"https://wa.me/{WHATSAPP_ADMIN_NUMBER}\">+{WHATSAPP_ADMIN_NUMBER}</a>\n\n"
+        f"📢 Bergabunglah dengan Group Telegram kami untuk info terbaru:\n"
+        f"<a href=\"{GROUP_TELEGRAM_LINK}\">HOKAGE LEGEND GROUP</a>\n\n"
+        f"<i>Saldo akan ditambahkan secara manual oleh Admin setelah verifikasi.</i>"
+    )
+    
+    reply_markup_to_send = get_main_menu_keyboard() if not is_admin(user_id) else get_admin_main_menu_keyboard()
+
+    if os.path.exists(QRIS_IMAGE_PATH):
+        try:
+            with open(QRIS_IMAGE_PATH, 'rb') as photo_file:
+                await update.message.reply_photo(
+                    photo=InputFile(photo_file), 
+                    caption=caption_text,
+                    parse_mode='HTML', 
+                    reply_markup=reply_markup_to_send
+                )
+        except Exception as e:
+            logger.error(f"Failed to send QRIS photo from local file: {e}")
+            await update.message.reply_text(
+                f"⚠️ <b>Gagal menampilkan gambar QRIS dari file lokal.</b>\n"
+                f"Silakan gunakan link ini untuk melihat QRIS: <a href=\"{QRIS_IMAGE_URL_FALLBACK}\">QRIS Anda</a>\n\n" + caption_text, 
+                parse_mode='HTML',
+                reply_markup=reply_markup_to_send
+            )
+    else:
+        logger.warning(f"QRIS image file not found at {QRIS_IMAGE_PATH}. Sending URL fallback.")
+        await update.message.reply_text(
+            f"⚠️ <b>Gagal menampilkan gambar QRIS. File tidak ditemukan di server.</b>\n"
+            f"Silakan gunakan link ini untuk melihat QRIS: <a href=\"{QRIS_IMAGE_URL_FALLBACK}\">QRIS Anda</a>\n\n" + caption_text, 
+            parse_mode='HTML',
+            reply_markup=reply_markup_to_send
+        )
+
+async def refresh_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text('🔄 Data akan diperbarui.', reply_markup=get_main_menu_keyboard())
+
+# BARU: Handler Cek Saldo untuk User Biasa
+async def check_balance_user_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    current_balance = get_user_balance(user_id)
     await update.message.reply_text(
-        f"💰 <b>Saldo Anda saat ini:</b> Rp {balance:,.0f}",
+        f"💳 <b>Saldo Anda saat ini: Rp {current_balance:,.0f}</b>.",
         parse_mode='HTML',
         reply_markup=get_main_menu_keyboard()
     )
 
-async def topup_saldo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Menangani permintaan topup saldo"""
-    try:
-        # Coba kirim gambar QRIS dari file lokal
-        with open(QRIS_IMAGE_PATH, 'rb') as photo:
-            await update.message.reply_photo(
-                photo=InputFile(photo),
-                caption=(
-                    "💳 <b>TOPUP SALDO via QRIS</b>\n\n"
-                    "1. Scan QRIS di atas untuk pembayaran\n"
-                    "2. Setelah transfer, kirim bukti pembayaran ke admin @" + TELEGRAM_ADMIN_USERNAME + "\n"
-                    "3. Saldo akan ditambahkan setelah pembayaran dikonfirmasi\n\n"
-                    f"💬 WhatsApp Admin: {WHATSAPP_ADMIN_NUMBER}\n"
-                    f"👥 Grup Telegram: {GROUP_TELEGRAM_LINK}"
-                ),
-                parse_mode='HTML',
-                reply_markup=get_main_menu_keyboard()
-            )
-    except FileNotFoundError:
-        # Jika gambar lokal tidak ditemukan, gunakan URL fallback
-        await update.message.reply_text(
-            "💳 <b>TOPUP SALDO via QRIS</b>\n\n"
-            "1. Kunjungi link berikut untuk pembayaran: " + QRIS_IMAGE_URL_FALLBACK + "\n"
-            "2. Setelah transfer, kirim bukti pembayaran ke admin @" + TELEGRAM_ADMIN_USERNAME + "\n"
-            "3. Saldo akan ditambahkan setelah pembayaran dikonfirmasi\n\n"
-            f"💬 WhatsApp Admin: {WHATSAPP_ADMIN_NUMBER}\n"
-            f"👥 Grup Telegram: {GROUP_TELEGRAM_LINK}",
-            parse_mode='HTML',
-            reply_markup=get_main_menu_keyboard()
-        )
-
-async def refresh_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Menangani permintaan refresh menu"""
+# BARU: Handler Riwayat Transaksi untuk User Biasa
+async def view_transactions_user_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
-    if is_admin(user_id):
-        await update.message.reply_text(
-            "🔄 Menu diperbarui (Admin Mode)",
-            reply_markup=get_admin_main_menu_keyboard()
-        )
-    else:
-        await update.message.reply_text(
-            "🔄 Menu diperbarui",
-            reply_markup=get_main_menu_keyboard()
-        )
+    transactions = get_user_transactions(user_id)
 
-# --- HANDLER KHUSUS ADMIN ---
-async def view_all_transactions_admin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Menampilkan semua transaksi (untuk admin)"""
-    user_id = update.effective_user.id
-    if not is_admin(user_id):
-        await update.message.reply_text("🚫 Maaf, fitur ini hanya untuk admin.", reply_markup=get_main_menu_keyboard())
-        return
-    
-    transactions = get_all_transactions(limit=20)
     if not transactions:
-        await update.message.reply_text("📜 Tidak ada riwayat transaksi.", reply_markup=get_admin_main_menu_keyboard())
-        return
-    
-    message = "📜 <b>Riwayat Transaksi Terakhir (Semua Pengguna)</b>\n\n"
-    for tx in transactions:
-        message += (
-            f"👤 User ID: <code>{tx['user_id']}</code>\n"
-            f"📝 Tipe: {tx['type']}\n"
-            f"💰 Jumlah: Rp {tx['amount']:,.0f}\n"
-            f"⏱️ Waktu: {tx['timestamp']}\n"
-            f"📋 Deskripsi: {tx.get('description', '-')}\n"
-            f"──────────────────\n"
-        )
-    
-    await update.message.reply_text(message, parse_mode='HTML', reply_markup=get_admin_main_menu_keyboard())
+        message = "📜 <b>Anda belum memiliki riwayat transaksi.</b>"
+    else:
+        message = "📜 <b>Riwayat Transaksi Anda (10 Terbaru):</b>\n\n"
+        for i, tx in enumerate(transactions):
+            amount_str = f"Rp {abs(tx['amount']):,.0f}"
+            sign = "+" if tx['amount'] >= 0 else "" 
+            message += f"<b>{i+1}.</b> <code>{tx['timestamp']}</code>\n"
+            message += f"   Tipe: <i>{tx['type'].replace('_', ' ').title()}</i>\n"
+            message += f"   Jumlah: {sign}{amount_str}\n"
+            if tx['description']:
+                message += f"   Deskripsi: <i>{tx['description']}</i>\n"
+            message += "\n"
+    await update.message.reply_text(message, parse_mode='HTML', reply_markup=get_main_menu_keyboard())
 
-# --- CONVERSATION HANDLERS ---
-async def cancel_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Membatalkan percakapan yang sedang berlangsung."""
-    await update.message.reply_text(
-        '❌ Operasi dibatalkan.',
-        reply_markup=get_admin_main_menu_keyboard() if is_admin(update.effective_user.id) else get_main_menu_keyboard()
-    )
-    return ConversationHandler.END
-
+# FUNGSI-FUNGSI HANDLER PERCAKAPAN
 # VMess Conversation Handlers
+# States: VMESS_GET_USERNAME, VMESS_GET_EXPIRED_DAYS, VMESS_GET_QUOTA, VMESS_GET_IP_LIMIT (didefinisikan global)
+
 async def create_akun_vmess_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Memulai percakapan untuk pembuatan akun VMESS."""
+    """Memulai percakapan untuk pembuatan akun VMESS (dipicu dari sub-menu VMESS)."""
     user_id = update.effective_user.id
     current_balance = get_user_balance(user_id)
 
@@ -584,14 +590,15 @@ async def create_akun_vmess_start(update: Update, context: ContextTypes.DEFAULT_
     else:
         await update.message.reply_text(
             f"✅ Saldo Anda saat ini <b>Rp {current_balance:,.0f}</b>. Biaya pembuatan akun <b>Rp {ACCOUNT_COST_IDR:,.0f}</b>.\n"
-            "Saldo Anda cukup. Silakan masukkan Username VMESS:"
+            "Saldo Anda cukup. Silakan masukkan Username:"
         )
         return VMESS_GET_USERNAME
 
 async def vmess_get_username(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Menerima username dan meminta masa aktif (days)."""
     username = update.message.text
     if not username:
-        await update.message.reply_text("Username tidak boleh kosong. Silakan masukkan Username VMESS:")
+        await update.message.reply_text("Username tidak boleh kosong. Silakan masukkan Username:")
         return VMESS_GET_USERNAME
     
     if not username.isalnum() and "_" not in username:
@@ -603,6 +610,7 @@ async def vmess_get_username(update: Update, context: ContextTypes.DEFAULT_TYPE)
     return VMESS_GET_EXPIRED_DAYS
 
 async def vmess_get_expired_days(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Menerima masa aktif dan meminta limit kuota (GB)."""
     expired_days_str = update.message.text
     if not expired_days_str.isdigit():
         await update.message.reply_text("Masa aktif harus berupa angka. Silakan masukkan Masa Aktif (contoh: 30):")
@@ -614,6 +622,7 @@ async def vmess_get_expired_days(update: Update, context: ContextTypes.DEFAULT_T
     return VMESS_GET_QUOTA
 
 async def vmess_get_quota(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Menerima limit kuota dan meminta batas IP."""
     quota_str = update.message.text
     if not quota_str.isdigit():
         await update.message.reply_text("Limit Kuota harus berupa angka. Silakan masukkan Limit Kuota (contoh: 10):")
@@ -621,24 +630,23 @@ async def vmess_get_quota(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     
     quota = int(quota_str)
     context.user_data['vmess_quota'] = quota
-    await update.message.reply_text("Limit Kuota diterima. Sekarang, masukkan Limit IP (contoh: 1 untuk 1 IP):")
+    await update.message.reply_text("Limit Kuota diterima. Terakhir, masukkan Batas User (jumlah IP, contoh: 2 untuk 2 IP):")
     return VMESS_GET_IP_LIMIT
 
 async def vmess_get_ip_limit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Menerima batas IP, menjalankan skrip, dan mengirim hasilnya."""
+    user_id = update.effective_user.id
     ip_limit_str = update.message.text
     if not ip_limit_str.isdigit():
-        await update.message.reply_text("Limit IP harus berupa angka. Silakan masukkan Limit IP (contoh: 1):")
+        await update.message.reply_text("Batas User (IP) harus berupa angka. Silakan masukkan Batas User (contoh: 2):")
         return VMESS_GET_IP_LIMIT
     
     ip_limit = int(ip_limit_str)
     context.user_data['vmess_ip_limit'] = ip_limit
-    
-    # Lanjut proses pembuatan akun VMESS
-    user_id = update.effective_user.id
+
     username = context.user_data['vmess_username']
     expired_days = context.user_data['vmess_expired_days']
     quota = context.user_data['vmess_quota']
-    ip_limit = context.user_data['vmess_ip_limit']
 
     current_balance = get_user_balance(user_id)
     if current_balance < ACCOUNT_COST_IDR:
@@ -652,7 +660,7 @@ async def vmess_get_ip_limit(update: Update, context: ContextTypes.DEFAULT_TYPE)
         context.user_data.clear()
         return ConversationHandler.END
 
-    deduction_successful = update_user_balance(user_id, ACCOUNT_COST_IDR, 'account_creation', f"VMESS account creation for {username}", is_deduction=True)
+    deduction_successful = update_user_balance(user_id, ACCOUNT_COST_IDR, 'account_creation', f"VMess account creation for {username}", is_deduction=True)
 
     if not deduction_successful:
         await update.message.reply_text(
@@ -669,7 +677,7 @@ async def vmess_get_ip_limit(update: Update, context: ContextTypes.DEFAULT_TYPE)
         f"Username: `{username}`\n"
         f"Masa Aktif: `{expired_days}` hari\n"
         f"Limit Kuota: `{quota}` GB\n"
-        f"Limit IP: `{ip_limit}`\n"
+        f"Batas IP: `{ip_limit}`\n"
         f"Mohon tunggu..."
     )
 
@@ -677,7 +685,7 @@ async def vmess_get_ip_limit(update: Update, context: ContextTypes.DEFAULT_TYPE)
     result_ssh = await run_ssh_command(command) 
 
     if "Error:" in result_ssh or "Terjadi Kesalahan di Server!" in result_ssh:
-        update_user_balance(user_id, ACCOUNT_COST_IDR, 'refund', f"Refund for failed VMESS creation {username}", is_deduction=False) 
+        update_user_balance(user_id, ACCOUNT_COST_IDR, 'refund', f"Refund for failed VMess creation {username}", is_deduction=False) 
         await update.message.reply_text(
             f"❌ Gagal membuat akun VMESS:\n\n{result_ssh}\n"
             f"<b>Saldo Anda telah dikembalikan.</b>",
@@ -690,6 +698,8 @@ async def vmess_get_ip_limit(update: Update, context: ContextTypes.DEFAULT_TYPE)
     return ConversationHandler.END
 
 # Shadowsocks Conversation Handlers
+# SHADOWSOCKS_GET_USERNAME, SHADOWSOCKS_GET_EXPIRED_DAYS, SHADOWSOCKS_GET_QUOTA = range(4, 7) # States sudah didefinisikan di atas
+
 async def create_akun_shdwsk_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Memulai percakapan untuk pembuatan akun Shadowsocks."""
     user_id = update.effective_user.id
@@ -800,7 +810,148 @@ async def shdwsk_get_quota(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     context.user_data.clear()
     return ConversationHandler.END
 
+# SSH OVPN Conversation Handlers
+async def create_akun_ssh_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Memulai percakapan untuk pembuatan akun SSH OVPN."""
+    user_id = update.effective_user.id
+    current_balance = get_user_balance(user_id)
+
+    if current_balance < ACCOUNT_COST_IDR:
+        await update.message.reply_text(
+            f"🚫 <b>Saldo Anda tidak mencukupi!</b>\n"
+            f"Saldo Anda saat ini: <b>Rp {current_balance:,.0f}</b>.\n"
+            f"Untuk membuat akun SSH OVPN (durasi {ACCOUNT_DURATION_DAYS} hari) dibutuhkan: <b>Rp {ACCOUNT_COST_IDR:,.0f}</b>.\n"
+            "Silakan lakukan <b>TOPUP SALDO [QRIS]</b> terlebih dahulu.",
+            parse_mode='HTML',
+            reply_markup=get_ssh_ovpn_menu_keyboard()
+        )
+        return ConversationHandler.END
+    else:
+        await update.message.reply_text(
+            f"✅ Saldo Anda saat ini <b>Rp {current_balance:,.0f}</b>. Biaya pembuatan akun <b>Rp {ACCOUNT_COST_IDR:,.0f}</b>.\n"
+            "Saldo Anda cukup. Silakan masukkan Username SSH OVPN:"
+        )
+        return SSH_OVPN_GET_USERNAME
+
+async def ssh_ovpn_get_username(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Menerima username dan meminta password."""
+    username = update.message.text
+    if not username:
+        await update.message.reply_text("Username tidak boleh kosong. Silakan masukkan Username SSH OVPN:")
+        return SSH_OVPN_GET_USERNAME
+    
+    if not username.isalnum() and "_" not in username:
+        await update.message.reply_text("Username hanya boleh mengandung huruf, angka, dan underscore (_). Silakan masukkan Username yang valid:")
+        return SSH_OVPN_GET_USERNAME
+
+    context.user_data['ssh_ovpn_username'] = username
+    await update.message.reply_text("Username diterima. Sekarang, masukkan Password SSH OVPN:")
+    return SSH_OVPN_GET_PASSWORD
+
+async def ssh_ovpn_get_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Menerima password dan meminta masa aktif."""
+    password = update.message.text
+    if not password:
+        await update.message.reply_text("Password tidak boleh kosong. Silakan masukkan Password SSH OVPN:")
+        return SSH_OVPN_GET_PASSWORD
+    
+    context.user_data['ssh_ovpn_password'] = password
+    await update.message.reply_text("Password diterima. Sekarang, masukkan Masa Aktif (dalam hari, contoh: 30 untuk 30 hari):")
+    return SSH_OVPN_GET_EXPIRED_DAYS
+
+async def ssh_ovpn_get_expired_days(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Menerima masa aktif dan meminta limit kuota."""
+    expired_days_str = update.message.text
+    if not expired_days_str.isdigit():
+        await update.message.reply_text("Masa aktif harus berupa angka. Silakan masukkan Masa Aktif (contoh: 30):")
+        return SSH_OVPN_GET_EXPIRED_DAYS
+    
+    expired_days = int(expired_days_str)
+    context.user_data['ssh_ovpn_expired_days'] = expired_days
+    await update.message.reply_text("Masa Aktif diterima. Sekarang, masukkan Limit Kuota (dalam GB, contoh: 10 untuk 10 GB):")
+    return SSH_OVPN_GET_QUOTA
+
+async def ssh_ovpn_get_quota(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Menerima limit kuota dan meminta batas IP."""
+    quota_str = update.message.text
+    if not quota_str.isdigit():
+        await update.message.reply_text("Limit Kuota harus berupa angka. Silakan masukkan Limit Kuota (contoh: 10):")
+        return SSH_OVPN_GET_QUOTA
+    
+    quota = int(quota_str)
+    context.user_data['ssh_ovpn_quota'] = quota
+    await update.message.reply_text("Limit Kuota diterima. Terakhir, masukkan Batas User (jumlah IP, contoh: 2 untuk 2 IP):")
+    return SSH_OVPN_GET_IP_LIMIT
+
+async def ssh_ovpn_get_ip_limit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Menerima batas IP, menjalankan skrip, dan mengirim hasilnya."""
+    user_id = update.effective_user.id
+    ip_limit_str = update.message.text
+    if not ip_limit_str.isdigit():
+        await update.message.reply_text("Batas User (IP) harus berupa angka. Silakan masukkan Batas User (contoh: 2):")
+        return SSH_OVPN_GET_IP_LIMIT
+    
+    ip_limit = int(ip_limit_str)
+    context.user_data['ssh_ovpn_ip_limit'] = ip_limit
+
+    username = context.user_data['ssh_ovpn_username']
+    password = context.user_data['ssh_ovpn_password']
+    expired_days = context.user_data['ssh_ovpn_expired_days']
+    quota = context.user_data['ssh_ovpn_quota']
+
+    current_balance = get_user_balance(user_id)
+    if current_balance < ACCOUNT_COST_IDR:
+        await update.message.reply_text(
+            f"🚫 <b>Saldo Anda saat ini Rp {current_balance:,.0f}.</b> Biaya pembuatan akun <b>Rp {ACCOUNT_COST_IDR:,.0f}</b>.\n"
+            "Maaf, saldo Anda tidak mencukupi saat proses akhir. Mungkin ada transaksi lain.\n"
+            "Silakan lakukan <b>TOPUP SALDO [QRIS]</b> terlebih dahulu.",
+            parse_mode='HTML',
+            reply_markup=get_ssh_ovpn_menu_keyboard()
+        )
+        context.user_data.clear()
+        return ConversationHandler.END
+
+    deduction_successful = update_user_balance(user_id, ACCOUNT_COST_IDR, 'account_creation', f"SSH OVPN account creation for {username}", is_deduction=True)
+
+    if not deduction_successful:
+        await update.message.reply_text(
+            "⚠️ <b>Terjadi kesalahan saat mengurangi saldo Anda.</b> Mohon coba lagi atau hubungi administrator.",
+            parse_mode='HTML',
+            reply_markup=get_ssh_ovpn_menu_keyboard()
+        )
+        context.user_data.clear()
+        return ConversationHandler.END
+
+    await update.message.reply_text(
+        f"✅ Saldo Anda <b>Rp {ACCOUNT_COST_IDR:,.0f}</b> telah dikurangi. Sisa saldo Anda: <b>Rp {get_user_balance(user_id):,.0f}</b>.\n"
+        f"Membuat akun SSH OVPN dengan detail:\n"
+        f"Username: `{username}`\n"
+        f"Password: `{password}`\n"
+        f"Masa Aktif: `{expired_days}` hari\n"
+        f"Limit Kuota: `{quota}` GB\n"
+        f"Batas IP: `{ip_limit}`\n"
+        f"Mohon tunggu..."
+    )
+
+    command = f"bash /usr/bin/addssh-bot {username} {password} {expired_days} {quota} {ip_limit}"
+    result_ssh = await run_ssh_command(command) 
+
+    if "Error:" in result_ssh or "Terjadi Kesalahan di Server!" in result_ssh:
+        update_user_balance(user_id, ACCOUNT_COST_IDR, 'refund', f"Refund for failed SSH OVPN creation {username}", is_deduction=False) 
+        await update.message.reply_text(
+            f"❌ Gagal membuat akun SSH OVPN:\n\n{result_ssh}\n"
+            f"<b>Saldo Anda telah dikembalikan.</b>",
+            parse_mode='HTML', reply_markup=get_ssh_ovpn_menu_keyboard()
+        )
+    else:
+        await update.message.reply_text(f"🎉 Akun SSH OVPN berhasil dibuat!\n\n{result_ssh}", parse_mode='HTML', reply_markup=get_ssh_ovpn_menu_keyboard())
+
+    context.user_data.clear()
+    return ConversationHandler.END
+
 # Admin: Add Balance Conversation Handlers
+# ADD_BALANCE_GET_USER_ID, ADD_BALANCE_GET_AMOUNT (states defined global)
+
 async def add_balance_conversation_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Memulai percakapan untuk menambah saldo pengguna (admin only)."""
     user_id = update.effective_user.id
@@ -808,199 +959,207 @@ async def add_balance_conversation_start(update: Update, context: ContextTypes.D
         await update.message.reply_text("🚫 Maaf, fitur ini hanya untuk admin.", reply_markup=get_main_menu_keyboard())
         return ConversationHandler.END
     
-    await update.message.reply_text(
-        "➕ <b>Tambahkan Saldo Pengguna</b>\n\n"
-        "Silakan masukkan <b>User ID</b> penerima:",
-        parse_mode='HTML',
-        reply_markup=get_manage_users_menu_keyboard()
-    )
+    await update.message.reply_text("Silakan masukkan <b>User ID</b> pengguna yang ingin ditambahkan saldonya:", parse_mode='HTML')
     return ADD_BALANCE_GET_USER_ID
 
 async def add_balance_get_user_id_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Mendapatkan User ID untuk menambah saldo."""
-    user_id_str = update.message.text
-    if not user_id_str.isdigit():
-        await update.message.reply_text("User ID harus berupa angka. Silakan masukkan User ID yang valid:")
+    user_input_id = update.message.text
+    if not user_input_id.isdigit():
+        await update.message.reply_text("❌ User ID harus berupa angka. Silakan masukkan User ID yang valid:")
         return ADD_BALANCE_GET_USER_ID
     
-    user_id = int(user_id_str)
-    context.user_data['add_balance_user_id'] = user_id
+    target_user_id = int(user_input_id)
     
-    await update.message.reply_text(
-        f"User ID <code>{user_id}</code> diterima.\n"
-        "Sekarang masukkan jumlah saldo yang akan ditambahkan (contoh: 50000):",
-        parse_mode='HTML'
-    )
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_id FROM users WHERE user_id = ?", (target_user_id,))
+    target_user_exists = cursor.fetchone()
+    conn.close()
+
+    if not target_user_exists:
+        await update.message.reply_text(f"❌ User ID <b>{target_user_id}</b> tidak ditemukan dalam database. Pastikan user telah menggunakan bot sebelumnya.", parse_mode='HTML', reply_markup=get_manage_users_menu_keyboard())
+        context.user_data.clear()
+        return ConversationHandler.END 
+
+    context.user_data['target_user_id_for_balance'] = target_user_id
+    await update.message.reply_text(f"✅ User ID <b>{target_user_id}</b> ditemukan.\nSilakan masukkan <b>jumlah saldo</b> yang ingin ditambahkan (contoh: 50000):", parse_mode='HTML')
     return ADD_BALANCE_GET_AMOUNT
 
 async def add_balance_get_amount_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Mendapatkan jumlah saldo yang akan ditambahkan."""
     amount_str = update.message.text
-    if not amount_str.replace('.', '').isdigit():  # Memungkinkan desimal
-        await update.message.reply_text("Jumlah saldo harus berupa angka. Silakan masukkan jumlah yang valid:")
+    if not amount_str.replace('.', '', 1).isdigit(): 
+        await update.message.reply_text("❌ Jumlah saldo harus berupa angka. Silakan masukkan jumlah yang valid:")
         return ADD_BALANCE_GET_AMOUNT
     
     amount = float(amount_str)
-    user_id = context.user_data['add_balance_user_id']
-    
-    # Update saldo pengguna
-    success = update_user_balance(user_id, amount, 'admin_topup', f"Saldo ditambahkan oleh admin {update.effective_user.id}")
-    
-    if success:
+    if amount <= 0:
+        await update.message.reply_text("❌ Jumlah saldo harus lebih dari nol. Silakan masukkan jumlah yang valid:")
+        return ADD_BALANCE_GET_AMOUNT
+
+    target_user_id = context.user_data.get('target_user_id_for_balance')
+    if target_user_id is None: 
+        await update.message.reply_text("⚠️ Terjadi kesalahan. User ID target tidak ditemukan. Mohon ulangi proses.", reply_markup=get_manage_users_menu_keyboard())
+        context.user_data.clear()
+        return ConversationHandler.END
+
+    if update_user_balance(target_user_id, amount, 'topup_admin', f"Topup by admin {update.effective_user.id}"): 
         await update.message.reply_text(
-            f"✅ Berhasil menambahkan <b>Rp {amount:,.0f}</b> ke akun <code>{user_id}</code>.\n"
-            f"Saldo baru: <b>Rp {get_user_balance(user_id):,.0f}</b>",
+            f"✅ Saldo untuk user <b>{target_user_id}</b> berhasil ditambahkan sebesar <b>Rp {amount:,.0f}</b>.\n"
+            f"Saldo baru user: <b>Rp {get_user_balance(target_user_id):,.0f}</b>",
             parse_mode='HTML',
-            reply_markup=get_manage_users_menu_keyboard()
+            reply_markup=get_manage_users_menu_keyboard() 
         )
     else:
-        await update.message.reply_text(
-            "❌ Gagal menambahkan saldo. Pastikan User ID valid.",
-            reply_markup=get_manage_users_menu_keyboard()
-        )
+        await update.message.reply_text("❌ Terjadi kesalahan saat menambahkan saldo ke database.", reply_markup=get_manage_users_menu_keyboard())
     
     context.user_data.clear()
     return ConversationHandler.END
 
 # Admin: Check User Balance Conversation Handlers
+# CHECK_BALANCE_GET_USER_ID = range(1) # States sudah didefinisikan di atas
+
 async def check_user_balance_conversation_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Memulai percakapan untuk mengecek saldo pengguna (admin only)."""
     user_id = update.effective_user.id
     if not is_admin(user_id):
         await update.message.reply_text("🚫 Maaf, fitur ini hanya untuk admin.", reply_markup=get_main_menu_keyboard())
         return ConversationHandler.END
     
-    await update.message.reply_text(
-        "🔎 <b>Cek Saldo Pengguna</b>\n\n"
-        "Silakan masukkan <b>User ID</b> yang ingin dicek:",
-        parse_mode='HTML',
-        reply_markup=get_manage_users_menu_keyboard()
-    )
+    await update.message.reply_text("Silakan masukkan <b>User ID</b> pengguna yang ingin dicek saldonya:", parse_mode='HTML')
     return CHECK_BALANCE_GET_USER_ID
 
 async def check_user_balance_get_user_id_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Mendapatkan User ID untuk mengecek saldo."""
-    user_id_str = update.message.text
-    if not user_id_str.isdigit():
-        await update.message.reply_text("User ID harus berupa angka. Silakan masukkan User ID yang valid:")
+    user_input_id = update.message.text
+    if not user_input_id.isdigit():
+        await update.message.reply_text("❌ User ID harus berupa angka. Silakan masukkan User ID yang valid:")
         return CHECK_BALANCE_GET_USER_ID
     
-    user_id = int(user_id_str)
-    balance = get_user_balance(user_id)
-    
-    await update.message.reply_text(
-        f"💰 Saldo pengguna <code>{user_id}</code>: <b>Rp {balance:,.0f}</b>",
-        parse_mode='HTML',
-        reply_markup=get_manage_users_menu_keyboard()
-    )
-    return ConversationHandler.END
+    target_user_id = int(user_input_id)
+    target_balance = get_user_balance(target_user_id) 
 
-# Admin: View User Transactions Conversation Handlers
-async def view_user_tx_conversation_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Memulai percakapan untuk melihat riwayat transaksi pengguna (admin only)."""
-    user_id = update.effective_user.id
-    if not is_admin(user_id):
-        await update.message.reply_text("🚫 Maaf, fitur ini hanya untuk admin.", reply_markup=get_main_menu_keyboard())
-        return ConversationHandler.END
-    
-    await update.message.reply_text(
-        "📜 <b>Riwayat Transaksi Pengguna</b>\n\n"
-        "Silakan masukkan <b>User ID</b> yang ingin dicek:",
-        parse_mode='HTML',
-        reply_markup=get_manage_users_menu_keyboard()
-    )
-    return VIEW_USER_TX_GET_USER_ID
-
-async def view_user_tx_get_user_id_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Mendapatkan User ID untuk melihat riwayat transaksi."""
-    user_id_str = update.message.text
-    if not user_id_str.isdigit():
-        await update.message.reply_text("User ID harus berupa angka. Silakan masukkan User ID yang valid:")
-        return VIEW_USER_TX_GET_USER_ID
-    
-    user_id = int(user_id_str)
-    transactions = get_user_transactions(user_id, limit=10)
-    
-    if not transactions:
+    if target_balance is not None: 
         await update.message.reply_text(
-            f"📜 Tidak ada riwayat transaksi untuk pengguna <code>{user_id}</code>.",
+            f"✅ Saldo user <b>{target_user_id}</b> saat ini: <b>Rp {target_balance:,.0f}</b>.",
             parse_mode='HTML',
             reply_markup=get_manage_users_menu_keyboard()
         )
-        return ConversationHandler.END
-    
-    message = f"📜 <b>Riwayat Transaksi Terakhir untuk User ID {user_id}</b>\n\n"
-    for tx in transactions:
-        message += (
-            f"📝 Tipe: {tx['type']}\n"
-            f"💰 Jumlah: Rp {tx['amount']:,.0f}\n"
-            f"⏱️ Waktu: {tx['timestamp']}\n"
-            f"📋 Deskripsi: {tx.get('description', '-')}\n"
-            f"──────────────────\n"
+    else:
+        await update.message.reply_text(
+            f"❌ User ID <b>{target_user_id}</b> tidak ditemukan dalam database. Pastikan user telah menggunakan bot sebelumnya.",
+            parse_mode='HTML',
+            reply_markup=get_manage_users_menu_keyboard()
         )
-    
-    await update.message.reply_text(
-        message,
-        parse_mode='HTML',
-        reply_markup=get_manage_users_menu_keyboard()
-    )
+    context.user_data.clear()
     return ConversationHandler.END
 
-# Admin: Command untuk menambah saldo (alternatif dari conversation)
-async def admin_add_balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handler perintah /add_balance untuk admin."""
+# Admin: View User Transactions Conversation Handlers
+# VIEW_USER_TX_GET_USER_ID = range(1) # States sudah didefinisikan di atas
+
+async def view_user_tx_conversation_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = update.effective_user.id
+    if not is_admin(user_id):
+        await update.message.reply_text("🚫 Maaf, fitur ini hanya untuk admin.", reply_markup=get_main_menu_keyboard())
+        return ConversationHandler.END
+    
+    await update.message.reply_text("Silakan masukkan <b>User ID</b> pengguna yang ingin dilihat riwayat transaksinya:", parse_mode='HTML')
+    return VIEW_USER_TX_GET_USER_ID
+
+async def view_user_tx_get_user_id_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_input_id = update.message.text
+    if not user_input_id.isdigit():
+        await update.message.reply_text("❌ User ID harus berupa angka. Silakan masukkan User ID yang valid:")
+        return VIEW_USER_TX_GET_USER_ID
+    
+    target_user_id = int(user_input_id)
+    transactions = get_user_transactions(target_user_id) 
+
+    if not transactions:
+        message = f"📜 <b>User ID {target_user_id} belum memiliki riwayat transaksi.</b>"
+    else:
+        message = f"📜 <b>Riwayat Transaksi User {target_user_id} (10 Terbaru):</b>\n\n"
+        for i, tx in enumerate(transactions):
+            amount_str = f"Rp {abs(tx['amount']):,.0f}"
+            sign = "+" if tx['amount'] >= 0 else "" 
+            message += f"<b>{i+1}.</b> <code>{tx['timestamp']}</code>\n"
+            message += f"   Tipe: <i>{tx['type'].replace('_', ' ').title()}</i>\n"
+            message += f"   Jumlah: {sign}{amount_str}\n"
+            if tx['description']:
+                message += f"   Deskripsi: <i>{tx['description']}</i>\n"
+            message += "\n"
+    
+    await update.message.reply_text(message, parse_mode='HTML', reply_markup=get_manage_users_menu_keyboard())
+    context.user_data.clear()
+    return ConversationHandler.END
+
+
+# Handler untuk Admin: Riwayat Transaksi Global
+async def view_all_transactions_admin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     if not is_admin(user_id):
         await update.message.reply_text("🚫 Maaf, fitur ini hanya untuk admin.", reply_markup=get_main_menu_keyboard())
         return
-    
-    if not context.args or len(context.args) != 2:
-        await update.message.reply_text(
-            "ℹ️ Penggunaan: /add_balance <user_id> <amount>\n"
-            "Contoh: /add_balance 12345678 50000",
-            reply_markup=get_admin_main_menu_keyboard()
-        )
-        return
-    
-    target_user_id_str, amount_str = context.args
-    if not target_user_id_str.isdigit() or not amount_str.replace('.', '').isdigit():
-        await update.message.reply_text(
-            "❌ Format tidak valid. User ID dan Amount harus berupa angka.",
-            reply_markup=get_admin_main_menu_keyboard()
-        )
-        return
-    
-    target_user_id = int(target_user_id_str)
-    amount = float(amount_str)
-    
-    success = update_user_balance(target_user_id, amount, 'admin_topup', f"Saldo ditambahkan oleh admin {user_id} via command")
-    
-    if success:
-        await update.message.reply_text(
-            f"✅ Berhasil menambahkan <b>Rp {amount:,.0f}</b> ke akun <code>{target_user_id}</code>.\n"
-            f"Saldo baru: <b>Rp {get_user_balance(target_user_id):,.0f}</b>",
-            parse_mode='HTML',
-            reply_markup=get_admin_main_menu_keyboard()
-        )
-    else:
-        await update.message.reply_text(
-            "❌ Gagal menambahkan saldo. Pastikan User ID valid.",
-            reply_markup=get_admin_main_menu_keyboard()
-        )
 
-# --- Handler untuk pesan yang tidak dikenali ---
-async def unknown(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Menangani pesan yang tidak dikenali."""
+    transactions = get_all_transactions() 
+
+    if not transactions:
+        message = "📜 <b>Belum ada riwayat transaksi global.</b>"
+    else:
+        message = "📜 <b>Riwayat Semua Transaksi (20 Terbaru):</b>\n\n"
+        for i, tx in enumerate(transactions):
+            amount_str = f"Rp {abs(tx['amount']):,.0f}"
+            sign = "+" if tx['amount'] >= 0 else ""
+            message += f"<b>{i+1}. User {tx['user_id']}</b> <code>{tx['timestamp']}</code>\n"
+            message += f"   Tipe: <i>{tx['type'].replace('_', ' ').title()}</i>\n"
+            message += f"   Jumlah: {sign}{amount_str}\n"
+            if tx['description']:
+                message += f"   Deskripsi: <i>{tx['description']}</i>\n"
+            message += "\n"
+    
+    await update.message.reply_text(message, parse_mode='HTML', reply_markup=get_admin_main_menu_keyboard())
+
+
+# CommandHandler untuk Admin: Tambah Saldo (Opsional, tetap ada sebagai alternatif /add_balance)
+async def admin_add_balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
-    if is_admin(user_id):
+    if not is_admin(user_id):
+        await update.message.reply_text("🚫 Maaf, perintah ini hanya untuk admin.", reply_markup=get_main_menu_keyboard())
+        return
+
+    args = context.args
+    if len(args) != 2 or not args[0].isdigit() or not args[1].replace('.', '', 1).isdigit():
+        await update.message.reply_text("⚠️ Penggunaan: /add_balance &lt;user_id&gt; &lt;jumlah_saldo_ditambah&gt;\nContoh: /add_balance 123456789 50000", parse_mode='HTML', reply_markup=get_admin_main_menu_keyboard())
+        return
+
+    target_user_id = int(args[0])
+    amount = float(args[1])
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_id FROM users WHERE user_id = ?", (target_user_id,))
+    target_user_exists = cursor.fetchone()
+    conn.close()
+
+    if not target_user_exists:
+        await update.message.reply_text(f"❌ User ID <b>{target_user_id}</b> tidak ditemukan dalam database. Pastikan user telah menggunakan bot sebelumnya.", parse_mode='HTML', reply_markup=get_admin_main_menu_keyboard())
+        return
+
+    if update_user_balance(target_user_id, amount, 'topup_command', f"Topup by admin command {update.effective_user.id}"):
         await update.message.reply_text(
-            "🤔 Perintah tidak dikenali. Silakan pilih menu di bawah:",
-            reply_markup=get_admin_main_menu_keyboard()
+            f"✅ Saldo untuk user <b>{target_user_id}</b> berhasil ditambahkan sebesar <b>Rp {amount:,.0f}</b>.\n"
+            f"Saldo baru user: <b>Rp {get_user_balance(target_user_id):,.0f}</b>",
+            parse_mode='HTML', reply_markup=get_admin_main_menu_keyboard()
         )
     else:
+        await update.message.reply_text("❌ Terjadi kesalahan saat menambahkan saldo.", reply_markup=get_admin_main_menu_keyboard())
+
+
+# Fallback Handler (paling akhir)
+async def unknown(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    current_keyboard = get_admin_main_menu_keyboard() if is_admin(user_id) else get_main_menu_keyboard()
+    if update.message and update.message.from_user and not update.message.from_user.is_bot:
         await update.message.reply_text(
-            "🤔 Perintah tidak dikenali. Silakan pilih menu di bawah:",
-            reply_markup=get_main_menu_keyboard()
+            '❓ Maaf, saya tidak mengerti perintah itu. Silakan gunakan tombol menu atau perintah /menu.',
+            reply_markup=current_keyboard
         )
 
 # --- FUNGSI UTAMA UNTUK MEMULAI BOT ---
@@ -1018,43 +1177,63 @@ def main() -> None:
     
     application = Application.builder().token(BOT_TOKEN).build()
 
-    # --- Handler perintah dan navigasi menu utama ---
+    # --- Pendaftaran semua handler ke application ---
+    
+    # Handler Perintah Umum
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("menu", show_menu))
 
+    # Navigasi Menu Utama ke Sub-menu
     application.add_handler(MessageHandler(filters.Regex(r'^🚀 MENU SSH OVPN$'), menu_ssh_ovpn_main))
     application.add_handler(MessageHandler(filters.Regex(r'^⚡ MENU VMESS$'), menu_vmess_main)) 
     application.add_handler(MessageHandler(filters.Regex(r'^🛡️ MENU TROJAN$'), menu_trojan_main))
     application.add_handler(MessageHandler(filters.Regex(r'^👻 MENU SHDWSK$'), menu_shdwsk_main)) 
 
+    # Tombol 'Back'
     application.add_handler(MessageHandler(filters.Regex(r'^🔙 Back to Main Menu$'), back_to_main_menu))
     application.add_handler(MessageHandler(filters.Regex(r'^🔙 Back to Admin Menu$'), back_to_main_menu)) 
 
-    # --- Handlers untuk tombol di Sub-Menu Trojan ---
+    # Handlers untuk tombol di Sub-Menu Trojan
     application.add_handler(MessageHandler(filters.Regex(r'^🆓 CREATE TRIAL TROJAN$'), create_trial_trojan_handler))
     application.add_handler(MessageHandler(filters.Regex(r'^➕ CREATE AKUN TROJAN$'), create_akun_trojan_handler))
 
-    # --- Handlers untuk tombol di Sub-Menu VMESS ---
+    # Handlers untuk tombol di Sub-Menu VMESS
     application.add_handler(MessageHandler(filters.Regex(r'^🆓 CREATE TRIAL VMESS$'), create_trial_vmess_handler))
     application.add_handler(MessageHandler(filters.Regex(r'^📊 CHECK VMESS SERVICE$'), check_vmess_service_handler)) 
     
-    # --- Handler untuk tombol di Sub-Menu SSH OVPN ---
+    # Handlers untuk tombol di Sub-Menu SSH OVPN
     application.add_handler(MessageHandler(filters.Regex(r'^ℹ️ INFO SSH OVPN$'), info_ssh_ovpn_handler))
+    
+    # SSH OVPN Conversation Handler
+    ssh_ovpn_conv_handler = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex(r'^➕ CREATE AKUN SSH$'), create_akun_ssh_handler)],
+        states={
+            SSH_OVPN_GET_USERNAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, ssh_ovpn_get_username)],
+            SSH_OVPN_GET_PASSWORD: [MessageHandler(filters.TEXT & ~filters.COMMAND, ssh_ovpn_get_password)],
+            SSH_OVPN_GET_EXPIRED_DAYS: [MessageHandler(filters.TEXT & ~filters.COMMAND, ssh_ovpn_get_expired_days)],
+            SSH_OVPN_GET_QUOTA: [MessageHandler(filters.TEXT & ~filters.COMMAND, ssh_ovpn_get_quota)],
+            SSH_OVPN_GET_IP_LIMIT: [MessageHandler(filters.TEXT & ~filters.COMMAND, ssh_ovpn_get_ip_limit)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel_conversation), MessageHandler(filters.COMMAND, cancel_conversation)],
+        allow_reentry=True
+    )
+    application.add_handler(ssh_ovpn_conv_handler)
 
-    # --- Handler untuk tombol menu umum lainnya ---
+    # Handlers untuk tombol menu umum lainnya
     application.add_handler(MessageHandler(filters.Regex(r'^🌀 MENU VLESS$'), menu_vless_handler))
-    application.add_handler(MessageHandler(filters.Regex(r'^👻 MENU SHDWSK$'), menu_shdwsk_handler))
+    application.add_handler(MessageHandler(filters.Regex(r'^👻 MENU SHDWSK$'), menu_shdwsk_handler)) 
 
-    # --- Handler KHUSUS ADMIN (perlu dicek role user) ---
+    # Handlers KHUSUS ADMIN
     application.add_handler(MessageHandler(filters.Regex(r'^🔍 CHECK SERVICE$'), check_service_admin_handler))
     application.add_handler(MessageHandler(filters.Regex(r'^⚙️ OTHER SETTING$'), other_setting_admin_handler))
     application.add_handler(MessageHandler(filters.Regex(r'^👥 MANAGE USERS$'), manage_users_main)) 
     application.add_handler(MessageHandler(filters.Regex(r'^📜 Riwayat Transaksi Admin$'), view_all_transactions_admin_handler))
-
-    # --- Handler untuk User Biasa: Cek Saldo & Riwayat Transaksi ---
+    
+    # Handlers untuk User Biasa (Cek Saldo & Riwayat Transaksi)
     application.add_handler(MessageHandler(filters.Regex(r'^💳 Cek Saldo$'), check_balance_user_handler))
     application.add_handler(MessageHandler(filters.Regex(r'^📜 Riwayat Transaksi$'), view_transactions_user_handler))
 
+    # Handler TOPUP dan REFRESH
     application.add_handler(MessageHandler(filters.Regex(r'^💰 TOPUP SALDO \[QRIS\]$'), topup_saldo_handler)) 
     application.add_handler(MessageHandler(filters.Regex(r'^🔄 REFRESH$'), refresh_handler))
 
@@ -1120,11 +1299,13 @@ def main() -> None:
     )
     application.add_handler(view_user_tx_conv_handler)
 
-    # --- CommandHandler untuk Admin: Tambah Saldo (Opsional, tetap ada sebagai alternatif /add_balance) ---
+
+    # CommandHandler untuk Admin: Tambah Saldo (Opsional)
     application.add_handler(CommandHandler("add_balance", admin_add_balance_command))
 
-    # --- Fallback Handler (paling akhir) ---
+    # Fallback Handler (paling akhir)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, unknown))
+
 
     logger.info("Bot running in polling mode...")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
