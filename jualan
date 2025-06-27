@@ -198,7 +198,8 @@ def get_manage_users_menu_keyboard():
 def get_settings_menu_keyboard():
     """Mengembalikan ReplyKeyboardMarkup untuk sub-menu Settings (Admin Only)."""
     buttons = [
-        [KeyboardButton('💾 Backup VPS')], # New button for Backup VPS
+        [KeyboardButton('💾 Backup VPS')],
+        [KeyboardButton('👁️ Cek Koneksi Aktif')], # New button for checking connections
         [KeyboardButton('Change SSH Host (Placeholder)')], # Example setting
         [KeyboardButton('🔙 Back to Admin Menu')]
     ]
@@ -223,7 +224,7 @@ def get_vmess_creation_menu_keyboard():
     ]
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True, one_time_keyboard=False)
 
-def get_vless_menu_keyboard(): # New VLESS Menu Keyboard
+def get_vless_menu_keyboard():
     """Mengembalikan ReplyKeyboardMarkup untuk sub-menu VLESS."""
     buttons = [
         [KeyboardButton('➕ CREATE AKUN VLESS')],
@@ -524,6 +525,23 @@ async def backup_vps_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         message_error='❌ Gagal melakukan backup VPS.',
         return_markup=get_settings_menu_keyboard() # Return to settings menu after
     )
+
+async def check_connections_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handles the Check Current Connections button, executing the script."""
+    user_id = update.effective_user.id
+    if not is_admin(user_id):
+        await update.message.reply_text("🚫 Maaf, fitur ini hanya untuk admin.", reply_markup=get_main_menu_keyboard())
+        return
+    
+    await handle_general_script_button(
+        update, 
+        context, 
+        '/usr/bin/bot-cek-login-ssh', # Path to your check connections script
+        message_loading='Memeriksa koneksi pengguna aktif. Mohon tunggu...',
+        message_error='❌ Gagal memeriksa koneksi aktif. Pastikan script ada dan izin benar.',
+        return_markup=get_settings_menu_keyboard() # Return to settings menu after
+    )
+
 
 async def create_trial_trojan_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await handle_general_script_button(update, context, '/usr/bin/bot-trial',
@@ -1382,7 +1400,7 @@ def main() -> None:
     # Navigasi Menu Utama ke Sub-menu
     application.add_handler(MessageHandler(filters.Regex(r'^🚀 MENU SSH OVPN$'), menu_ssh_ovpn_main))
     application.add_handler(MessageHandler(filters.Regex(r'^⚡ MENU VMESS$'), menu_vmess_main))
-    application.add_handler(MessageHandler(filters.Regex(r'^🌀 MENU VLESS$'), menu_vless_main)) # VLESS menu entry point
+    application.add_handler(MessageHandler(filters.Regex(r'^🌀 MENU VLESS$'), menu_vless_main))
     application.add_handler(MessageHandler(filters.Regex(r'^🛡️ MENU TROJAN$'), menu_trojan_main))
     application.add_handler(MessageHandler(filters.Regex(r'^👻 MENU SHDWSK$'), menu_shdwsk_main))
 
@@ -1430,7 +1448,8 @@ def main() -> None:
     # New: Settings menu and its handlers
     application.add_handler(MessageHandler(filters.Regex(r'^⚙️ Settings$'), settings_main_menu))
     application.add_handler(MessageHandler(filters.Regex(r'^Change SSH Host \(Placeholder\)$'), handle_change_ssh_host_placeholder))
-    application.add_handler(MessageHandler(filters.Regex(r'^💾 Backup VPS$'), backup_vps_handler)) # New backup handler
+    application.add_handler(MessageHandler(filters.Regex(r'^💾 Backup VPS$'), backup_vps_handler))
+    application.add_handler(MessageHandler(filters.Regex(r'^👁️ Cek Koneksi Aktif$'), check_connections_handler)) # New connection checker handler
 
     # Handlers untuk User Biasa (Cek Saldo & Riwayat Transaksi)
     application.add_handler(MessageHandler(filters.Regex(r'^💳 Cek Saldo$'), check_balance_user_handler))
