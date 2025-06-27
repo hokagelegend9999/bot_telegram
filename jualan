@@ -75,7 +75,7 @@ def get_db_connection():
 
 def init_db():
     """Menginisialisasi database dan membuat tabel jika belum ada."""
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
@@ -163,7 +163,7 @@ def get_main_menu_keyboard():
     """Mengembalikan objek ReplyKeyboardMarkup untuk menu utama user biasa."""
     buttons = [
         [KeyboardButton('🚀 MENU SSH OVPN')],
-        [KeyboardButton('⚡ MENU VMESS'), KeyboardButton('🌀 MENU VLESS')], # VLESS menu moved here
+        [KeyboardButton('⚡ MENU VMESS'), KeyboardButton('🌀 MENU VLESS')],
         [KeyboardButton('🛡️ MENU TROJAN'), KeyboardButton('👻 MENU SHDWSK')],
         [KeyboardButton('💳 Cek Saldo'), KeyboardButton('📜 Riwayat Transaksi')],
         [KeyboardButton('💰 TOPUP SALDO [QRIS]')],
@@ -175,7 +175,7 @@ def get_admin_main_menu_keyboard():
     """Mengembalikan objek ReplyKeyboardMarkup untuk menu utama admin."""
     buttons = [
         [KeyboardButton('🚀 MENU SSH OVPN')],
-        [KeyboardButton('⚡ MENU VMESS'), KeyboardButton('🌀 MENU VLESS')], # VLESS menu moved here
+        [KeyboardButton('⚡ MENU VMESS'), KeyboardButton('🌀 MENU VLESS')],
         [KeyboardButton('🛡️ MENU TROJAN'), KeyboardButton('👻 MENU SHDWSK')],
         [KeyboardButton('🔍 CHECK SERVICE'), KeyboardButton('⚙️ Settings')], # Added Settings button
         [KeyboardButton('👥 MANAGE USERS')],
@@ -198,6 +198,7 @@ def get_manage_users_menu_keyboard():
 def get_settings_menu_keyboard():
     """Mengembalikan ReplyKeyboardMarkup untuk sub-menu Settings (Admin Only)."""
     buttons = [
+        [KeyboardButton('💾 Backup VPS')], # New button for Backup VPS
         [KeyboardButton('Change SSH Host (Placeholder)')], # Example setting
         [KeyboardButton('🔙 Back to Admin Menu')]
     ]
@@ -405,7 +406,7 @@ async def menu_vmess_main(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         reply_markup=get_vmess_creation_menu_keyboard(), parse_mode='HTML'
     )
 
-async def menu_vless_main(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None: # New VLESS menu handler
+async def menu_vless_main(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Menampilkan sub-menu VLESS."""
     await update.message.reply_text(
         "➡️ Anda di Menu <b>VLESS</b>. Pilih opsi:",
@@ -441,7 +442,6 @@ async def back_to_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         )
 
 # HANDLER UTK TOMBOL MENU UMUM (tidak memerlukan input interaktif)
-# This one is now for the button inside VLESS menu
 async def check_vless_service_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await handle_general_script_button(update, context, '/usr/bin/bot-cek-vless',
                                  message_loading='Memuat informasi layanan VLESS...',
@@ -449,7 +449,6 @@ async def check_vless_service_handler(update: Update, context: ContextTypes.DEFA
                                  return_markup=get_vless_menu_keyboard())
 
 
-# Ini seharusnya tidak lagi dipanggil langsung oleh tombol utama jika ada sub-menu.
 async def menu_shdwsk_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await handle_general_script_button(update, context, '/usr/bin/bot-trialss', # Menggunakan bot-trialss untuk cek
                                  message_loading='Memuat menu SHADOWSOCKS...',
@@ -507,6 +506,23 @@ async def handle_change_ssh_host_placeholder(update: Update, context: ContextTyp
     await update.message.reply_text(
         "⚙️ Ini adalah contoh fungsi pengaturan. Di sini Anda bisa menambahkan logika untuk mengubah konfigurasi SSH Host.",
         reply_markup=get_settings_menu_keyboard(), parse_mode='HTML'
+    )
+
+async def backup_vps_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handles the Backup VPS button, executing the backup script."""
+    user_id = update.effective_user.id
+    if not is_admin(user_id):
+        await update.message.reply_text("🚫 Maaf, fitur ini hanya untuk admin.", reply_markup=get_main_menu_keyboard())
+        return
+    
+    # Call the general script handler for non-interactive scripts
+    await handle_general_script_button(
+        update, 
+        context, 
+        '/usr/bin/backup-bot.sh', # Path to your backup script
+        message_loading='Memulai proses backup VPS. Ini mungkin memakan waktu beberapa menit...',
+        message_error='❌ Gagal melakukan backup VPS.',
+        return_markup=get_settings_menu_keyboard() # Return to settings menu after
     )
 
 async def create_trial_trojan_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1383,7 +1399,7 @@ def main() -> None:
     application.add_handler(MessageHandler(filters.Regex(r'^📊 CHECK VMESS SERVICE$'), check_vmess_service_handler))
 
     # Handlers untuk tombol di Sub-Menu VLESS
-    application.add_handler(MessageHandler(filters.Regex(r'^📊 CHECK VLESS SERVICE$'), check_vless_service_handler)) # Moved from general to VLESS menu
+    application.add_handler(MessageHandler(filters.Regex(r'^📊 CHECK VLESS SERVICE$'), check_vless_service_handler))
 
     # Handlers untuk tombol di Sub-Menu SSH OVPN
     application.add_handler(MessageHandler(filters.Regex(r'^ℹ️ INFO SSH OVPN$'), info_ssh_ovpn_handler))
@@ -1408,14 +1424,13 @@ def main() -> None:
 
     # Handlers KHUSUS ADMIN
     application.add_handler(MessageHandler(filters.Regex(r'^🔍 CHECK SERVICE$'), check_service_admin_handler))
-    # Removed: application.add_handler(MessageHandler(filters.Regex(r'^⚙️ OTHER SETTING$'), other_setting_admin_handler))
     application.add_handler(MessageHandler(filters.Regex(r'^👥 MANAGE USERS$'), manage_users_main))
     application.add_handler(MessageHandler(filters.Regex(r'^📜 Riwayat Transaksi Admin$'), view_all_transactions_admin_handler))
 
     # New: Settings menu and its handlers
     application.add_handler(MessageHandler(filters.Regex(r'^⚙️ Settings$'), settings_main_menu))
     application.add_handler(MessageHandler(filters.Regex(r'^Change SSH Host \(Placeholder\)$'), handle_change_ssh_host_placeholder))
-
+    application.add_handler(MessageHandler(filters.Regex(r'^💾 Backup VPS$'), backup_vps_handler)) # New backup handler
 
     # Handlers untuk User Biasa (Cek Saldo & Riwayat Transaksi)
     application.add_handler(MessageHandler(filters.Regex(r'^💳 Cek Saldo$'), check_balance_user_handler))
