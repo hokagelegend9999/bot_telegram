@@ -9,7 +9,7 @@ import paramiko
 import asyncio
 
 # Import PTB specific modules
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InputFile 
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InputFile
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters, ConversationHandler
 
 # --- KONFIGURASI LOGGING ---
@@ -20,38 +20,38 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 # --- KONFIGURASI BOT ---
-BOT_TOKEN = '7948291780:AAGMIaOD1cS2l_SZZq6DejAU14VlAWu-sDU' 
+BOT_TOKEN = '7948291780:AAGMIaOD1cS2l_SZZq6DejAU14VlAWu-sDU'
 
 # Daftar Telegram User ID yang menjadi ADMIN
 ADMIN_IDS = [123456789, 987654321] # <--- GANTI DENGAN USER ID TELEGRAM ADMIN ANDA!
 
 # Nama file database
-DB_FILE = '/usr/bin/jualan.db' 
+DB_FILE = '/usr/bin/jualan.db'
 
 # --- KONFIGURASI SSH KE VPS ---
 SSH_HOST = "localhost"
-SSH_USERNAME = os.getenv("SSH_USERNAME", "root") 
-SSH_PASSWORD = os.getenv("SSH_PASSWORD", "") 
+SSH_USERNAME = os.getenv("SSH_USERNAME", "root")
+SSH_PASSWORD = os.getenv("SSH_PASSWORD", "")
 
 # --- KONSTANTA UNTUK BIAYA AKUN ---
 ACCOUNT_COST_IDR = 10000.0
-ACCOUNT_DURATION_DAYS = 30 
+ACCOUNT_DURATION_DAYS = 30
 
 # --- LOKASI GAMBAR QRIS (FILE LOKAL) ---
-QRIS_IMAGE_PATH = "/usr/bin/qris.jpg" 
+QRIS_IMAGE_PATH = "/usr/bin/qris.jpg"
 # URL Fallback jika pengiriman gambar lokal gagal (pastikan ini bisa diakses publik)
 QRIS_IMAGE_URL_FALLBACK = "http://aws.hokagelegend.web.id:89/qris.jpg"
 
 # --- INFORMASI KONTAK DAN GRUP ---
-TELEGRAM_ADMIN_USERNAME = "HookageLegend" 
-WHATSAPP_ADMIN_NUMBER = "087726917005" 
+TELEGRAM_ADMIN_USERNAME = "HookageLegend"
+WHATSAPP_ADMIN_NUMBER = "087726917005"
 GROUP_TELEGRAM_LINK = "https://t.me/hokagelegend1"
 
 # --- STATES UNTUK SEMUA CONVERSATION HANDLER (Didefinisikan secara GLOBAL di bagian paling atas) ---
 # VMess
 VMESS_GET_USERNAME, VMESS_GET_EXPIRED_DAYS, VMESS_GET_QUOTA, VMESS_GET_IP_LIMIT = range(4)
 # Shadowsocks
-SHADOWSOCKS_GET_USERNAME, SHADOWSOCKS_GET_EXPIRED_DAYS, SHADOWSOCKS_GET_QUOTA = range(4, 7) 
+SHADOWSOCKS_GET_USERNAME, SHADOWSOCKS_GET_EXPIRED_DAYS, SHADOWSOCKS_GET_QUOTA = range(4, 7)
 # SSH OVPN
 SSH_OVPN_GET_USERNAME, SSH_OVPN_GET_PASSWORD, SSH_OVPN_GET_EXPIRED_DAYS, SSH_OVPN_GET_QUOTA, SSH_OVPN_GET_IP_LIMIT = range(7, 12)
 # Admin: Add Balance
@@ -60,6 +60,10 @@ ADD_BALANCE_GET_USER_ID, ADD_BALANCE_GET_AMOUNT = range(12, 14)
 CHECK_BALANCE_GET_USER_ID = range(14, 15)
 # Admin: View User Transactions
 VIEW_USER_TX_GET_USER_ID = range(15, 16)
+# Admin: Settings
+SETTINGS_MENU = range(16, 17) # State for navigating the settings menu
+# VLESS
+VLESS_GET_USERNAME, VLESS_GET_EXPIRED_DAYS, VLESS_GET_QUOTA, VLESS_GET_IP_LIMIT = range(17, 21)
 
 
 # --- FUNGSI DATABASE ---
@@ -71,7 +75,7 @@ def get_db_connection():
 
 def init_db():
     """Menginisialisasi database dan membuat tabel jika belum ada."""
-    conn = get_db_connection()
+    conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
@@ -84,7 +88,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS transactions (
             transaction_id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
-            type TEXT NOT NULL, 
+            type TEXT NOT NULL,
             amount REAL NOT NULL,
             timestamp TEXT NOT NULL,
             description TEXT,
@@ -109,25 +113,26 @@ def update_user_balance(user_id: int, amount: float, transaction_type: str, desc
         current_balance_check = get_user_balance(user_id)
         if is_deduction and current_balance_check < amount:
             logger.warning(f"Deduction failed for user {user_id}: insufficient balance (current: {current_balance_check}, attempt to deduct: {amount})")
-            return False 
-        
+            return False
+
         if is_deduction:
             cursor.execute("UPDATE users SET balance = balance - ? WHERE user_id = ?", (amount, user_id))
         else:
             cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (amount, user_id))
-        
+
         timestamp = DT.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         cursor.execute("INSERT INTO transactions (user_id, type, amount, timestamp, description) VALUES (?, ?, ?, ?, ?)",
                        (user_id, transaction_type, amount if not is_deduction else -amount, timestamp, description))
         conn.commit()
-        
+
         return True
     except sqlite3.Error as e:
         logger.error(f"Database error updating balance for user {user_id} or logging transaction: {e}")
-        conn.rollback() 
+        conn.rollback()
         return False
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
 def get_user_transactions(user_id: int, limit: int = 10) -> list[dict]:
     conn = get_db_connection()
@@ -146,7 +151,7 @@ def get_all_transactions(limit: int = 20) -> list[dict]:
     return [dict(row) for row in transactions]
 
 # Call init_db here after function definitions
-init_db() 
+init_db()
 logger.info("Database initialized.")
 
 # --- HELPER: Cek apakah user adalah admin ---
@@ -158,7 +163,7 @@ def get_main_menu_keyboard():
     """Mengembalikan objek ReplyKeyboardMarkup untuk menu utama user biasa."""
     buttons = [
         [KeyboardButton('🚀 MENU SSH OVPN')],
-        [KeyboardButton('⚡ MENU VMESS'), KeyboardButton('🌀 MENU VLESS')],
+        [KeyboardButton('⚡ MENU VMESS'), KeyboardButton('🌀 MENU VLESS')], # VLESS menu moved here
         [KeyboardButton('🛡️ MENU TROJAN'), KeyboardButton('👻 MENU SHDWSK')],
         [KeyboardButton('💳 Cek Saldo'), KeyboardButton('📜 Riwayat Transaksi')],
         [KeyboardButton('💰 TOPUP SALDO [QRIS]')],
@@ -170,10 +175,10 @@ def get_admin_main_menu_keyboard():
     """Mengembalikan objek ReplyKeyboardMarkup untuk menu utama admin."""
     buttons = [
         [KeyboardButton('🚀 MENU SSH OVPN')],
-        [KeyboardButton('⚡ MENU VMESS'), KeyboardButton('🌀 MENU VLESS')],
+        [KeyboardButton('⚡ MENU VMESS'), KeyboardButton('🌀 MENU VLESS')], # VLESS menu moved here
         [KeyboardButton('🛡️ MENU TROJAN'), KeyboardButton('👻 MENU SHDWSK')],
-        [KeyboardButton('🔍 CHECK SERVICE'), KeyboardButton('⚙️ OTHER SETTING')],
-        [KeyboardButton('👥 MANAGE USERS')], 
+        [KeyboardButton('🔍 CHECK SERVICE'), KeyboardButton('⚙️ Settings')], # Added Settings button
+        [KeyboardButton('👥 MANAGE USERS')],
         [KeyboardButton('💰 TOPUP SALDO [QRIS]'), KeyboardButton('📜 Riwayat Transaksi Admin')],
         [KeyboardButton('🔄 REFRESH')]
     ]
@@ -186,16 +191,23 @@ def get_manage_users_menu_keyboard():
         [KeyboardButton('🔎 Cek Saldo Pengguna')],
         [KeyboardButton('📜 Riwayat Transaksi Pengguna')],
         [KeyboardButton('🗑️ Hapus Pengguna')],
-        [KeyboardButton('🔙 Back to Admin Menu')] 
+        [KeyboardButton('🔙 Back to Admin Menu')]
     ]
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True, one_time_keyboard=False)
 
+def get_settings_menu_keyboard():
+    """Mengembalikan ReplyKeyboardMarkup untuk sub-menu Settings (Admin Only)."""
+    buttons = [
+        [KeyboardButton('Change SSH Host (Placeholder)')], # Example setting
+        [KeyboardButton('🔙 Back to Admin Menu')]
+    ]
+    return ReplyKeyboardMarkup(buttons, resize_keyboard=True, one_time_keyboard=False)
 
 def get_ssh_ovpn_menu_keyboard():
     """Mengembalikan ReplyKeyboardMarkup untuk sub-menu SSH OVPN."""
     buttons = [
-        [KeyboardButton('➕ CREATE AKUN SSH')], 
-        [KeyboardButton('ℹ️ INFO SSH OVPN')], 
+        [KeyboardButton('➕ CREATE AKUN SSH')],
+        [KeyboardButton('ℹ️ INFO SSH OVPN')],
         [KeyboardButton('🔙 Back to Main Menu')]
     ]
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True, one_time_keyboard=False)
@@ -210,11 +222,20 @@ def get_vmess_creation_menu_keyboard():
     ]
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True, one_time_keyboard=False)
 
+def get_vless_menu_keyboard(): # New VLESS Menu Keyboard
+    """Mengembalikan ReplyKeyboardMarkup untuk sub-menu VLESS."""
+    buttons = [
+        [KeyboardButton('➕ CREATE AKUN VLESS')],
+        [KeyboardButton('📊 CHECK VLESS SERVICE')],
+        [KeyboardButton('🔙 Back to Main Menu')]
+    ]
+    return ReplyKeyboardMarkup(buttons, resize_keyboard=True, one_time_keyboard=False)
+
 def get_trojan_menu_keyboard():
     """Mengembalikan ReplyKeyboardMarkup untuk sub-menu Trojan."""
     buttons = [
         [KeyboardButton('🆓 CREATE TRIAL TROJAN')],
-        [KeyboardButton('➕ CREATE AKUN TROJAN')], 
+        [KeyboardButton('➕ CREATE AKUN TROJAN')],
         [KeyboardButton('🔙 Back to Main Menu')]
     ]
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True, one_time_keyboard=False)
@@ -222,8 +243,8 @@ def get_trojan_menu_keyboard():
 def get_shadowsocks_menu_keyboard():
     """Mengembalikan ReplyKeyboardMarkup untuk sub-menu Shadowsocks."""
     buttons = [
-        [KeyboardButton('➕ CREATE AKUN SHDWSK')], 
-        [KeyboardButton('🆓 CREATE TRIAL SHDWSK')], 
+        [KeyboardButton('➕ CREATE AKUN SHDWSK')],
+        [KeyboardButton('🆓 CREATE TRIAL SHDWSK')],
         [KeyboardButton('🔙 Back to Main Menu')]
     ]
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True, one_time_keyboard=False)
@@ -363,7 +384,7 @@ async def handle_general_script_button(update: Update, context: ContextTypes.DEF
 
     await update.message.reply_text(f"⏳ {message_loading}")
     result = await run_ssh_command(f"bash {script_path}")
-    if "Error:" in result or "Terjadi Kesalahan di Server!" in result: 
+    if "Error:" in result or "Terjadi Kesalahan di Server!" in result:
         await update.message.reply_text(f"{message_error}\n{result}", parse_mode='HTML', reply_markup=return_markup)
     else:
         await update.message.reply_text(result, parse_mode='HTML', reply_markup=return_markup)
@@ -382,6 +403,13 @@ async def menu_vmess_main(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await update.message.reply_text(
         "➡️ Anda di Menu <b>VMESS</b>. Pilih opsi:",
         reply_markup=get_vmess_creation_menu_keyboard(), parse_mode='HTML'
+    )
+
+async def menu_vless_main(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None: # New VLESS menu handler
+    """Menampilkan sub-menu VLESS."""
+    await update.message.reply_text(
+        "➡️ Anda di Menu <b>VLESS</b>. Pilih opsi:",
+        reply_markup=get_vless_menu_keyboard(), parse_mode='HTML'
     )
 
 async def menu_trojan_main(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -413,16 +441,19 @@ async def back_to_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         )
 
 # HANDLER UTK TOMBOL MENU UMUM (tidak memerlukan input interaktif)
-async def menu_vless_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+# This one is now for the button inside VLESS menu
+async def check_vless_service_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await handle_general_script_button(update, context, '/usr/bin/bot-cek-vless',
-                               message_loading='Memuat menu VLESS...',
-                               message_error='❌ Gagal memuat menu VLESS.')
+                                 message_loading='Memuat informasi layanan VLESS...',
+                                 message_error='❌ Gagal memuat informasi layanan VLESS.',
+                                 return_markup=get_vless_menu_keyboard())
+
 
 # Ini seharusnya tidak lagi dipanggil langsung oleh tombol utama jika ada sub-menu.
 async def menu_shdwsk_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await handle_general_script_button(update, context, '/usr/bin/bot-trialss', # Menggunakan bot-trialss untuk cek
-                               message_loading='Memuat menu SHADOWSOCKS...',
-                               message_error='❌ Gagal memuat menu SHADOWSOCKS.')
+                                 message_loading='Memuat menu SHADOWSOCKS...',
+                                 message_error='❌ Gagal memuat menu SHADOWSOCKS.')
 
 
 # HANDLER KHUSUS ADMIN
@@ -432,9 +463,9 @@ async def check_service_admin_handler(update: Update, context: ContextTypes.DEFA
         await update.message.reply_text("🚫 Maaf, fitur ini hanya untuk admin.", reply_markup=get_main_menu_keyboard())
         return
     await handle_general_script_button(update, context, '/usr/bin/resservice',
-                               message_loading='Memeriksa status layanan...',
-                               message_error='❌ Gagal memeriksa status layanan.',
-                               return_markup=get_admin_main_menu_keyboard())
+                                 message_loading='Memeriksa status layanan...',
+                                 message_error='❌ Gagal memeriksa status layanan.',
+                                 return_markup=get_admin_main_menu_keyboard())
 
 async def other_setting_admin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
@@ -442,9 +473,9 @@ async def other_setting_admin_handler(update: Update, context: ContextTypes.DEFA
         await update.message.reply_text("🚫 Maaf, fitur ini hanya untuk admin.", reply_markup=get_main_menu_keyboard())
         return
     await handle_general_script_button(update, context, '/usr/bin/bot-vps-info',
-                               message_loading='Memuat informasi VPS...',
-                               message_error='❌ Gagal memuat informasi VPS.',
-                               return_markup=get_admin_main_menu_keyboard())
+                                 message_loading='Memuat informasi VPS...',
+                                 message_error='❌ Gagal memuat informasi VPS.',
+                                 return_markup=get_admin_main_menu_keyboard())
 
 async def manage_users_main(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
@@ -456,23 +487,45 @@ async def manage_users_main(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         reply_markup=get_manage_users_menu_keyboard(), parse_mode='HTML'
     )
 
+# New: Settings Menu Handler
+async def settings_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    if not is_admin(user_id):
+        await update.message.reply_text("🚫 Maaf, fitur ini hanya untuk admin.", reply_markup=get_main_menu_keyboard())
+        return
+    await update.message.reply_text(
+        "➡️ Anda di Menu <b>Pengaturan</b>. Pilih opsi:",
+        reply_markup=get_settings_menu_keyboard(), parse_mode='HTML'
+    )
+
+async def handle_change_ssh_host_placeholder(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Placeholder for changing SSH Host."""
+    user_id = update.effective_user.id
+    if not is_admin(user_id):
+        await update.message.reply_text("🚫 Maaf, fitur ini hanya untuk admin.", reply_markup=get_main_menu_keyboard())
+        return
+    await update.message.reply_text(
+        "⚙️ Ini adalah contoh fungsi pengaturan. Di sini Anda bisa menambahkan logika untuk mengubah konfigurasi SSH Host.",
+        reply_markup=get_settings_menu_keyboard(), parse_mode='HTML'
+    )
+
 async def create_trial_trojan_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await handle_general_script_button(update, context, '/usr/bin/bot-trial',
-                               message_loading='Membuat akun trial Trojan...',
-                               message_error='❌ Gagal membuat akun trial Trojan.',
-                               return_markup=get_trojan_menu_keyboard())
+                                 message_loading='Membuat akun trial Trojan...',
+                                 message_error='❌ Gagal membuat akun trial Trojan.',
+                                 return_markup=get_trojan_menu_keyboard())
 
 async def create_trial_vmess_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await handle_general_script_button(update, context, '/usr/bin/bot-trialws',
-                               message_loading='Membuat akun trial VMESS...',
-                               message_error='❌ Gagal membuat akun VMESS.',
-                               return_markup=get_vmess_creation_menu_keyboard())
+                                 message_loading='Membuat akun trial VMESS...',
+                                 message_error='❌ Gagal membuat akun VMESS.',
+                                 return_markup=get_vmess_creation_menu_keyboard())
 
 async def check_vmess_service_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await handle_general_script_button(update, context, '/usr/bin/bot-cek-vmess',
-                               message_loading='Memeriksa status VMESS...',
-                               message_error='❌ Gagal memeriksa status VMESS.',
-                               return_markup=get_vmess_creation_menu_keyboard())
+                                 message_loading='Memeriksa status VMESS...',
+                                 message_error='❌ Gagal memeriksa status VMESS.',
+                                 return_markup=get_vmess_creation_menu_keyboard())
 
 
 async def info_ssh_ovpn_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -491,7 +544,7 @@ async def renew_akun_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def topup_saldo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     current_balance = get_user_balance(user_id)
-    
+
     caption_text = (
         f"<b>💰 Top Up Saldo Akun VPN Anda!</b>\n"
         f"Saldo Anda saat ini: <b>Rp {current_balance:,.0f}</b>.\n\n"
@@ -506,23 +559,23 @@ async def topup_saldo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         f"<a href=\"{GROUP_TELEGRAM_LINK}\">HOKAGE LEGEND GROUP</a>\n\n"
         f"<i>Saldo akan ditambahkan secara manual oleh Admin setelah verifikasi.</i>"
     )
-    
+
     reply_markup_to_send = get_main_menu_keyboard() if not is_admin(user_id) else get_admin_main_menu_keyboard()
 
     if os.path.exists(QRIS_IMAGE_PATH):
         try:
             with open(QRIS_IMAGE_PATH, 'rb') as photo_file:
                 await update.message.reply_photo(
-                    photo=InputFile(photo_file), 
+                    photo=InputFile(photo_file),
                     caption=caption_text,
-                    parse_mode='HTML', 
+                    parse_mode='HTML',
                     reply_markup=reply_markup_to_send
                 )
         except Exception as e:
             logger.error(f"Failed to send QRIS photo from local file: {e}")
             await update.message.reply_text(
                 f"⚠️ <b>Gagal menampilkan gambar QRIS dari file lokal.</b>\n"
-                f"Silakan gunakan link ini untuk melihat QRIS: <a href=\"{QRIS_IMAGE_URL_FALLBACK}\">QRIS Anda</a>\n\n" + caption_text, 
+                f"Silakan gunakan link ini untuk melihat QRIS: <a href=\"{QRIS_IMAGE_URL_FALLBACK}\">QRIS Anda</a>\n\n" + caption_text,
                 parse_mode='HTML',
                 reply_markup=reply_markup_to_send
             )
@@ -530,7 +583,7 @@ async def topup_saldo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         logger.warning(f"QRIS image file not found at {QRIS_IMAGE_PATH}. Sending URL fallback.")
         await update.message.reply_text(
             f"⚠️ <b>Gagal menampilkan gambar QRIS. File tidak ditemukan di server.</b>\n"
-            f"Silakan gunakan link ini untuk melihat QRIS: <a href=\"{QRIS_IMAGE_URL_FALLBACK}\">QRIS Anda</a>\n\n" + caption_text, 
+            f"Silakan gunakan link ini untuk melihat QRIS: <a href=\"{QRIS_IMAGE_URL_FALLBACK}\">QRIS Anda</a>\n\n" + caption_text,
             parse_mode='HTML',
             reply_markup=reply_markup_to_send
         )
@@ -559,12 +612,12 @@ async def view_transactions_user_handler(update: Update, context: ContextTypes.D
         message = "📜 <b>Riwayat Transaksi Anda (10 Terbaru):</b>\n\n"
         for i, tx in enumerate(transactions):
             amount_str = f"Rp {abs(tx['amount']):,.0f}"
-            sign = "+" if tx['amount'] >= 0 else "" 
+            sign = "+" if tx['amount'] >= 0 else ""
             message += f"<b>{i+1}.</b> <code>{tx['timestamp']}</code>\n"
-            message += f"   Tipe: <i>{tx['type'].replace('_', ' ').title()}</i>\n"
-            message += f"   Jumlah: {sign}{amount_str}\n"
+            message += f"    Tipe: <i>{tx['type'].replace('_', ' ').title()}</i>\n"
+            message += f"    Jumlah: {sign}{amount_str}\n"
             if tx['description']:
-                message += f"   Deskripsi: <i>{tx['description']}</i>\n"
+                message += f"    Deskripsi: <i>{tx['description']}</i>\n"
             message += "\n"
     await update.message.reply_text(message, parse_mode='HTML', reply_markup=get_main_menu_keyboard())
 
@@ -600,7 +653,7 @@ async def vmess_get_username(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if not username:
         await update.message.reply_text("Username tidak boleh kosong. Silakan masukkan Username:")
         return VMESS_GET_USERNAME
-    
+
     if not username.isalnum() and "_" not in username:
         await update.message.reply_text("Username hanya boleh mengandung huruf, angka, dan underscore (_). Silakan masukkan Username yang valid:")
         return VMESS_GET_USERNAME
@@ -615,7 +668,7 @@ async def vmess_get_expired_days(update: Update, context: ContextTypes.DEFAULT_T
     if not expired_days_str.isdigit():
         await update.message.reply_text("Masa aktif harus berupa angka. Silakan masukkan Masa Aktif (contoh: 30):")
         return VMESS_GET_EXPIRED_DAYS
-    
+
     expired_days = int(expired_days_str)
     context.user_data['vmess_expired_days'] = expired_days
     await update.message.reply_text("Masa Aktif diterima. Sekarang, masukkan Limit Kuota (dalam GB, contoh: 10 untuk 10 GB):")
@@ -627,7 +680,7 @@ async def vmess_get_quota(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if not quota_str.isdigit():
         await update.message.reply_text("Limit Kuota harus berupa angka. Silakan masukkan Limit Kuota (contoh: 10):")
         return VMESS_GET_QUOTA
-    
+
     quota = int(quota_str)
     context.user_data['vmess_quota'] = quota
     await update.message.reply_text("Limit Kuota diterima. Terakhir, masukkan Batas User (jumlah IP, contoh: 2 untuk 2 IP):")
@@ -640,7 +693,7 @@ async def vmess_get_ip_limit(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if not ip_limit_str.isdigit():
         await update.message.reply_text("Batas User (IP) harus berupa angka. Silakan masukkan Batas User (contoh: 2):")
         return VMESS_GET_IP_LIMIT
-    
+
     ip_limit = int(ip_limit_str)
     context.user_data['vmess_ip_limit'] = ip_limit
 
@@ -682,10 +735,10 @@ async def vmess_get_ip_limit(update: Update, context: ContextTypes.DEFAULT_TYPE)
     )
 
     command = f"bash /usr/bin/addws-bot {username} {expired_days} {quota} {ip_limit}"
-    result_ssh = await run_ssh_command(command) 
+    result_ssh = await run_ssh_command(command)
 
     if "Error:" in result_ssh or "Terjadi Kesalahan di Server!" in result_ssh:
-        update_user_balance(user_id, ACCOUNT_COST_IDR, 'refund', f"Refund for failed VMess creation {username}", is_deduction=False) 
+        update_user_balance(user_id, ACCOUNT_COST_IDR, 'refund', f"Refund for failed VMess creation {username}", is_deduction=False)
         await update.message.reply_text(
             f"❌ Gagal membuat akun VMESS:\n\n{result_ssh}\n"
             f"<b>Saldo Anda telah dikembalikan.</b>",
@@ -727,7 +780,7 @@ async def shdwsk_get_username(update: Update, context: ContextTypes.DEFAULT_TYPE
     if not username:
         await update.message.reply_text("Username tidak boleh kosong. Silakan masukkan Username Shadowsocks:")
         return SHADOWSOCKS_GET_USERNAME
-    
+
     if not username.isalnum() and "_" not in username:
         await update.message.reply_text("Username hanya boleh mengandung huruf, angka, dan underscore (_). Silakan masukkan Username yang valid:")
         return SHADOWSOCKS_GET_USERNAME
@@ -741,7 +794,7 @@ async def shdwsk_get_expired_days(update: Update, context: ContextTypes.DEFAULT_
     if not expired_days_str.isdigit():
         await update.message.reply_text("Masa aktif harus berupa angka. Silakan masukkan Masa Aktif (contoh: 30):")
         return SHADOWSOCKS_GET_EXPIRED_DAYS
-    
+
     expired_days = int(expired_days_str)
     context.user_data['shdwsk_expired_days'] = expired_days
     await update.message.reply_text("Masa Aktif diterima. Sekarang, masukkan Limit Kuota (dalam GB, contoh: 10 untuk 10 GB):")
@@ -752,10 +805,10 @@ async def shdwsk_get_quota(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     if not quota_str.isdigit():
         await update.message.reply_text("Limit Kuota harus berupa angka. Silakan masukkan Limit Kuota (contoh: 10):")
         return ConversationHandler.END # Perbaiki: jika bukan angka, end convo
-    
+
     quota = int(quota_str)
     context.user_data['shdwsk_quota'] = quota
-    
+
     # Lanjut proses pembuatan akun Shadowsocks
     user_id = update.effective_user.id
     username = context.user_data['shdwsk_username']
@@ -795,10 +848,10 @@ async def shdwsk_get_quota(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     )
 
     command = f"bash /usr/bin/addss-bot {username} {expired_days} {quota}" # addss-bot hanya 3 argumen
-    result_ssh = await run_ssh_command(command) 
+    result_ssh = await run_ssh_command(command)
 
     if "Error:" in result_ssh or "Terjadi Kesalahan di Server!" in result_ssh:
-        update_user_balance(user_id, ACCOUNT_COST_IDR, 'refund', f"Refund for failed Shadowsocks creation {username}", is_deduction=False) 
+        update_user_balance(user_id, ACCOUNT_COST_IDR, 'refund', f"Refund for failed Shadowsocks creation {username}", is_deduction=False)
         await update.message.reply_text(
             f"❌ Gagal membuat akun Shadowsocks:\n\n{result_ssh}\n"
             f"<b>Saldo Anda telah dikembalikan.</b>",
@@ -839,7 +892,7 @@ async def ssh_ovpn_get_username(update: Update, context: ContextTypes.DEFAULT_TY
     if not username:
         await update.message.reply_text("Username tidak boleh kosong. Silakan masukkan Username SSH OVPN:")
         return SSH_OVPN_GET_USERNAME
-    
+
     if not username.isalnum() and "_" not in username:
         await update.message.reply_text("Username hanya boleh mengandung huruf, angka, dan underscore (_). Silakan masukkan Username yang valid:")
         return SSH_OVPN_GET_USERNAME
@@ -854,7 +907,7 @@ async def ssh_ovpn_get_password(update: Update, context: ContextTypes.DEFAULT_TY
     if not password:
         await update.message.reply_text("Password tidak boleh kosong. Silakan masukkan Password SSH OVPN:")
         return SSH_OVPN_GET_PASSWORD
-    
+
     context.user_data['ssh_ovpn_password'] = password
     await update.message.reply_text("Password diterima. Sekarang, masukkan Masa Aktif (dalam hari, contoh: 30 untuk 30 hari):")
     return SSH_OVPN_GET_EXPIRED_DAYS
@@ -865,7 +918,7 @@ async def ssh_ovpn_get_expired_days(update: Update, context: ContextTypes.DEFAUL
     if not expired_days_str.isdigit():
         await update.message.reply_text("Masa aktif harus berupa angka. Silakan masukkan Masa Aktif (contoh: 30):")
         return SSH_OVPN_GET_EXPIRED_DAYS
-    
+
     expired_days = int(expired_days_str)
     context.user_data['ssh_ovpn_expired_days'] = expired_days
     await update.message.reply_text("Masa Aktif diterima. Sekarang, masukkan Limit Kuota (dalam GB, contoh: 10 untuk 10 GB):")
@@ -877,7 +930,7 @@ async def ssh_ovpn_get_quota(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if not quota_str.isdigit():
         await update.message.reply_text("Limit Kuota harus berupa angka. Silakan masukkan Limit Kuota (contoh: 10):")
         return SSH_OVPN_GET_QUOTA
-    
+
     quota = int(quota_str)
     context.user_data['ssh_ovpn_quota'] = quota
     await update.message.reply_text("Limit Kuota diterima. Terakhir, masukkan Batas User (jumlah IP, contoh: 2 untuk 2 IP):")
@@ -890,7 +943,7 @@ async def ssh_ovpn_get_ip_limit(update: Update, context: ContextTypes.DEFAULT_TY
     if not ip_limit_str.isdigit():
         await update.message.reply_text("Batas User (IP) harus berupa angka. Silakan masukkan Batas User (contoh: 2):")
         return SSH_OVPN_GET_IP_LIMIT
-    
+
     ip_limit = int(ip_limit_str)
     context.user_data['ssh_ovpn_ip_limit'] = ip_limit
 
@@ -934,10 +987,10 @@ async def ssh_ovpn_get_ip_limit(update: Update, context: ContextTypes.DEFAULT_TY
     )
 
     command = f"bash /usr/bin/addssh-bot {username} {password} {expired_days} {quota} {ip_limit}"
-    result_ssh = await run_ssh_command(command) 
+    result_ssh = await run_ssh_command(command)
 
     if "Error:" in result_ssh or "Terjadi Kesalahan di Server!" in result_ssh:
-        update_user_balance(user_id, ACCOUNT_COST_IDR, 'refund', f"Refund for failed SSH OVPN creation {username}", is_deduction=False) 
+        update_user_balance(user_id, ACCOUNT_COST_IDR, 'refund', f"Refund for failed SSH OVPN creation {username}", is_deduction=False)
         await update.message.reply_text(
             f"❌ Gagal membuat akun SSH OVPN:\n\n{result_ssh}\n"
             f"<b>Saldo Anda telah dikembalikan.</b>",
@@ -949,6 +1002,133 @@ async def ssh_ovpn_get_ip_limit(update: Update, context: ContextTypes.DEFAULT_TY
     context.user_data.clear()
     return ConversationHandler.END
 
+# VLESS Conversation Handlers
+async def create_akun_vless_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Memulai percakapan untuk pembuatan akun VLESS."""
+    user_id = update.effective_user.id
+    current_balance = get_user_balance(user_id)
+
+    if current_balance < ACCOUNT_COST_IDR:
+        await update.message.reply_text(
+            f"🚫 <b>Saldo Anda tidak mencukupi!</b>\n"
+            f"Saldo Anda saat ini: <b>Rp {current_balance:,.0f}</b>.\n"
+            f"Untuk membuat akun VLESS (durasi {ACCOUNT_DURATION_DAYS} hari) dibutuhkan: <b>Rp {ACCOUNT_COST_IDR:,.0f}</b>.\n"
+            "Silakan lakukan <b>TOPUP SALDO [QRIS]</b> terlebih dahulu.",
+            parse_mode='HTML',
+            reply_markup=get_vless_menu_keyboard()
+        )
+        return ConversationHandler.END
+    else:
+        await update.message.reply_text(
+            f"✅ Saldo Anda saat ini <b>Rp {current_balance:,.0f}</b>. Biaya pembuatan akun <b>Rp {ACCOUNT_COST_IDR:,.0f}</b>.\n"
+            "Saldo Anda cukup. Silakan masukkan Username VLESS:"
+        )
+        return VLESS_GET_USERNAME
+
+async def vless_get_username(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Menerima username dan meminta masa aktif (days) untuk VLESS."""
+    username = update.message.text
+    if not username:
+        await update.message.reply_text("Username tidak boleh kosong. Silakan masukkan Username VLESS:")
+        return VLESS_GET_USERNAME
+
+    if not username.isalnum() and "_" not in username:
+        await update.message.reply_text("Username hanya boleh mengandung huruf, angka, dan underscore (_). Silakan masukkan Username yang valid:")
+        return VLESS_GET_USERNAME
+
+    context.user_data['vless_username'] = username
+    await update.message.reply_text("Username diterima. Sekarang, masukkan Masa Aktif (dalam hari, contoh: 30 untuk 30 hari):")
+    return VLESS_GET_EXPIRED_DAYS
+
+async def vless_get_expired_days(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Menerima masa aktif dan meminta limit kuota (GB) untuk VLESS."""
+    expired_days_str = update.message.text
+    if not expired_days_str.isdigit():
+        await update.message.reply_text("Masa aktif harus berupa angka. Silakan masukkan Masa Aktif (contoh: 30):")
+        return VLESS_GET_EXPIRED_DAYS
+
+    expired_days = int(expired_days_str)
+    context.user_data['vless_expired_days'] = expired_days
+    await update.message.reply_text("Masa Aktif diterima. Sekarang, masukkan Limit Kuota (dalam GB, contoh: 10 untuk 10 GB):")
+    return VLESS_GET_QUOTA
+
+async def vless_get_quota(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Menerima limit kuota dan meminta batas IP untuk VLESS."""
+    quota_str = update.message.text
+    if not quota_str.isdigit():
+        await update.message.reply_text("Limit Kuota harus berupa angka. Silakan masukkan Limit Kuota (contoh: 10):")
+        return VLESS_GET_QUOTA
+
+    quota = int(quota_str)
+    context.user_data['vless_quota'] = quota
+    await update.message.reply_text("Limit Kuota diterima. Terakhir, masukkan Batas User (jumlah IP, contoh: 2 untuk 2 IP):")
+    return VLESS_GET_IP_LIMIT
+
+async def vless_get_ip_limit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Menerima batas IP, menjalankan skrip, dan mengirim hasilnya untuk VLESS."""
+    user_id = update.effective_user.id
+    ip_limit_str = update.message.text
+    if not ip_limit_str.isdigit():
+        await update.message.reply_text("Batas User (IP) harus berupa angka. Silakan masukkan Batas User (contoh: 2):")
+        return VLESS_GET_IP_LIMIT
+
+    ip_limit = int(ip_limit_str)
+    context.user_data['vless_ip_limit'] = ip_limit
+
+    username = context.user_data['vless_username']
+    expired_days = context.user_data['vless_expired_days']
+    quota = context.user_data['vless_quota']
+
+    current_balance = get_user_balance(user_id)
+    if current_balance < ACCOUNT_COST_IDR:
+        await update.message.reply_text(
+            f"🚫 <b>Saldo Anda saat ini Rp {current_balance:,.0f}.</b> Biaya pembuatan akun <b>Rp {ACCOUNT_COST_IDR:,.0f}</b>.\n"
+            "Maaf, saldo Anda tidak mencukupi saat proses akhir. Mungkin ada transaksi lain.\n"
+            "Silakan lakukan <b>TOPUP SALDO [QRIS]</b> terlebih dahulu.",
+            parse_mode='HTML',
+            reply_markup=get_vless_menu_keyboard()
+        )
+        context.user_data.clear()
+        return ConversationHandler.END
+
+    deduction_successful = update_user_balance(user_id, ACCOUNT_COST_IDR, 'account_creation', f"VLESS account creation for {username}", is_deduction=True)
+
+    if not deduction_successful:
+        await update.message.reply_text(
+            "⚠️ <b>Terjadi kesalahan saat mengurangi saldo Anda.</b> Mohon coba lagi atau hubungi administrator.",
+            parse_mode='HTML',
+            reply_markup=get_vless_menu_keyboard()
+        )
+        context.user_data.clear()
+        return ConversationHandler.END
+
+    await update.message.reply_text(
+        f"✅ Saldo Anda <b>Rp {ACCOUNT_COST_IDR:,.0f}</b> telah dikurangi. Sisa saldo Anda: <b>Rp {get_user_balance(user_id):,.0f}</b>.\n"
+        f"Membuat akun VLESS dengan detail:\n"
+        f"Username: `{username}`\n"
+        f"Masa Aktif: `{expired_days}` hari\n"
+        f"Limit Kuota: `{quota}` GB\n"
+        f"Batas IP: `{ip_limit}`\n"
+        f"Mohon tunggu..."
+    )
+
+    command = f"bash /usr/bin/addvless-bot {username} {expired_days} {quota} {ip_limit}"
+    result_ssh = await run_ssh_command(command)
+
+    if "Error:" in result_ssh or "Terjadi Kesalahan di Server!" in result_ssh:
+        update_user_balance(user_id, ACCOUNT_COST_IDR, 'refund', f"Refund for failed VLESS creation {username}", is_deduction=False)
+        await update.message.reply_text(
+            f"❌ Gagal membuat akun VLESS:\n\n{result_ssh}\n"
+            f"<b>Saldo Anda telah dikembalikan.</b>",
+            parse_mode='HTML', reply_markup=get_vless_menu_keyboard()
+        )
+    else:
+        await update.message.reply_text(f"🎉 Akun VLESS berhasil dibuat!\n\n{result_ssh}", parse_mode='HTML', reply_markup=get_vless_menu_keyboard())
+
+    context.user_data.clear()
+    return ConversationHandler.END
+
+
 # Admin: Add Balance Conversation Handlers
 # ADD_BALANCE_GET_USER_ID, ADD_BALANCE_GET_AMOUNT (states defined global)
 
@@ -958,7 +1138,7 @@ async def add_balance_conversation_start(update: Update, context: ContextTypes.D
     if not is_admin(user_id):
         await update.message.reply_text("🚫 Maaf, fitur ini hanya untuk admin.", reply_markup=get_main_menu_keyboard())
         return ConversationHandler.END
-    
+
     await update.message.reply_text("Silakan masukkan <b>User ID</b> pengguna yang ingin ditambahkan saldonya:", parse_mode='HTML')
     return ADD_BALANCE_GET_USER_ID
 
@@ -967,9 +1147,9 @@ async def add_balance_get_user_id_step(update: Update, context: ContextTypes.DEF
     if not user_input_id.isdigit():
         await update.message.reply_text("❌ User ID harus berupa angka. Silakan masukkan User ID yang valid:")
         return ADD_BALANCE_GET_USER_ID
-    
+
     target_user_id = int(user_input_id)
-    
+
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT user_id FROM users WHERE user_id = ?", (target_user_id,))
@@ -979,7 +1159,7 @@ async def add_balance_get_user_id_step(update: Update, context: ContextTypes.DEF
     if not target_user_exists:
         await update.message.reply_text(f"❌ User ID <b>{target_user_id}</b> tidak ditemukan dalam database. Pastikan user telah menggunakan bot sebelumnya.", parse_mode='HTML', reply_markup=get_manage_users_menu_keyboard())
         context.user_data.clear()
-        return ConversationHandler.END 
+        return ConversationHandler.END
 
     context.user_data['target_user_id_for_balance'] = target_user_id
     await update.message.reply_text(f"✅ User ID <b>{target_user_id}</b> ditemukan.\nSilakan masukkan <b>jumlah saldo</b> yang ingin ditambahkan (contoh: 50000):", parse_mode='HTML')
@@ -987,31 +1167,31 @@ async def add_balance_get_user_id_step(update: Update, context: ContextTypes.DEF
 
 async def add_balance_get_amount_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     amount_str = update.message.text
-    if not amount_str.replace('.', '', 1).isdigit(): 
+    if not amount_str.replace('.', '', 1).isdigit():
         await update.message.reply_text("❌ Jumlah saldo harus berupa angka. Silakan masukkan jumlah yang valid:")
         return ADD_BALANCE_GET_AMOUNT
-    
+
     amount = float(amount_str)
     if amount <= 0:
         await update.message.reply_text("❌ Jumlah saldo harus lebih dari nol. Silakan masukkan jumlah yang valid:")
         return ADD_BALANCE_GET_AMOUNT
 
     target_user_id = context.user_data.get('target_user_id_for_balance')
-    if target_user_id is None: 
+    if target_user_id is None:
         await update.message.reply_text("⚠️ Terjadi kesalahan. User ID target tidak ditemukan. Mohon ulangi proses.", reply_markup=get_manage_users_menu_keyboard())
         context.user_data.clear()
         return ConversationHandler.END
 
-    if update_user_balance(target_user_id, amount, 'topup_admin', f"Topup by admin {update.effective_user.id}"): 
+    if update_user_balance(target_user_id, amount, 'topup_admin', f"Topup by admin {update.effective_user.id}"):
         await update.message.reply_text(
             f"✅ Saldo untuk user <b>{target_user_id}</b> berhasil ditambahkan sebesar <b>Rp {amount:,.0f}</b>.\n"
             f"Saldo baru user: <b>Rp {get_user_balance(target_user_id):,.0f}</b>",
             parse_mode='HTML',
-            reply_markup=get_manage_users_menu_keyboard() 
+            reply_markup=get_manage_users_menu_keyboard()
         )
     else:
         await update.message.reply_text("❌ Terjadi kesalahan saat menambahkan saldo ke database.", reply_markup=get_manage_users_menu_keyboard())
-    
+
     context.user_data.clear()
     return ConversationHandler.END
 
@@ -1023,7 +1203,7 @@ async def check_user_balance_conversation_start(update: Update, context: Context
     if not is_admin(user_id):
         await update.message.reply_text("🚫 Maaf, fitur ini hanya untuk admin.", reply_markup=get_main_menu_keyboard())
         return ConversationHandler.END
-    
+
     await update.message.reply_text("Silakan masukkan <b>User ID</b> pengguna yang ingin dicek saldonya:", parse_mode='HTML')
     return CHECK_BALANCE_GET_USER_ID
 
@@ -1032,11 +1212,11 @@ async def check_user_balance_get_user_id_step(update: Update, context: ContextTy
     if not user_input_id.isdigit():
         await update.message.reply_text("❌ User ID harus berupa angka. Silakan masukkan User ID yang valid:")
         return CHECK_BALANCE_GET_USER_ID
-    
-    target_user_id = int(user_input_id)
-    target_balance = get_user_balance(target_user_id) 
 
-    if target_balance is not None: 
+    target_user_id = int(user_input_id)
+    target_balance = get_user_balance(target_user_id)
+
+    if target_balance is not None:
         await update.message.reply_text(
             f"✅ Saldo user <b>{target_user_id}</b> saat ini: <b>Rp {target_balance:,.0f}</b>.",
             parse_mode='HTML',
@@ -1059,7 +1239,7 @@ async def view_user_tx_conversation_start(update: Update, context: ContextTypes.
     if not is_admin(user_id):
         await update.message.reply_text("🚫 Maaf, fitur ini hanya untuk admin.", reply_markup=get_main_menu_keyboard())
         return ConversationHandler.END
-    
+
     await update.message.reply_text("Silakan masukkan <b>User ID</b> pengguna yang ingin dilihat riwayat transaksinya:", parse_mode='HTML')
     return VIEW_USER_TX_GET_USER_ID
 
@@ -1068,9 +1248,9 @@ async def view_user_tx_get_user_id_step(update: Update, context: ContextTypes.DE
     if not user_input_id.isdigit():
         await update.message.reply_text("❌ User ID harus berupa angka. Silakan masukkan User ID yang valid:")
         return VIEW_USER_TX_GET_USER_ID
-    
+
     target_user_id = int(user_input_id)
-    transactions = get_user_transactions(target_user_id) 
+    transactions = get_user_transactions(target_user_id)
 
     if not transactions:
         message = f"📜 <b>User ID {target_user_id} belum memiliki riwayat transaksi.</b>"
@@ -1078,14 +1258,14 @@ async def view_user_tx_get_user_id_step(update: Update, context: ContextTypes.DE
         message = f"📜 <b>Riwayat Transaksi User {target_user_id} (10 Terbaru):</b>\n\n"
         for i, tx in enumerate(transactions):
             amount_str = f"Rp {abs(tx['amount']):,.0f}"
-            sign = "+" if tx['amount'] >= 0 else "" 
+            sign = "+" if tx['amount'] >= 0 else ""
             message += f"<b>{i+1}.</b> <code>{tx['timestamp']}</code>\n"
-            message += f"   Tipe: <i>{tx['type'].replace('_', ' ').title()}</i>\n"
-            message += f"   Jumlah: {sign}{amount_str}\n"
+            message += f"    Tipe: <i>{tx['type'].replace('_', ' ').title()}</i>\n"
+            message += f"    Jumlah: {sign}{amount_str}\n"
             if tx['description']:
-                message += f"   Deskripsi: <i>{tx['description']}</i>\n"
+                message += f"    Deskripsi: <i>{tx['description']}</i>\n"
             message += "\n"
-    
+
     await update.message.reply_text(message, parse_mode='HTML', reply_markup=get_manage_users_menu_keyboard())
     context.user_data.clear()
     return ConversationHandler.END
@@ -1098,7 +1278,7 @@ async def view_all_transactions_admin_handler(update: Update, context: ContextTy
         await update.message.reply_text("🚫 Maaf, fitur ini hanya untuk admin.", reply_markup=get_main_menu_keyboard())
         return
 
-    transactions = get_all_transactions() 
+    transactions = get_all_transactions()
 
     if not transactions:
         message = "📜 <b>Belum ada riwayat transaksi global.</b>"
@@ -1108,12 +1288,12 @@ async def view_all_transactions_admin_handler(update: Update, context: ContextTy
             amount_str = f"Rp {abs(tx['amount']):,.0f}"
             sign = "+" if tx['amount'] >= 0 else ""
             message += f"<b>{i+1}. User {tx['user_id']}</b> <code>{tx['timestamp']}</code>\n"
-            message += f"   Tipe: <i>{tx['type'].replace('_', ' ').title()}</i>\n"
-            message += f"   Jumlah: {sign}{amount_str}\n"
+            message += f"    Tipe: <i>{tx['type'].replace('_', ' ').title()}</i>\n"
+            message += f"    Jumlah: {sign}{amount_str}\n"
             if tx['description']:
-                message += f"   Deskripsi: <i>{tx['description']}</i>\n"
+                message += f"    Deskripsi: <i>{tx['description']}</i>\n"
             message += "\n"
-    
+
     await update.message.reply_text(message, parse_mode='HTML', reply_markup=get_admin_main_menu_keyboard())
 
 
@@ -1174,24 +1354,25 @@ def main() -> None:
     if not SSH_PASSWORD:
         logger.critical("Variabel lingkungan SSH_PASSWORD tidak disetel atau kosong. Bot tidak dapat memulai SSH.")
         exit(1)
-    
+
     application = Application.builder().token(BOT_TOKEN).build()
 
     # --- Pendaftaran semua handler ke application ---
-    
+
     # Handler Perintah Umum
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("menu", show_menu))
 
     # Navigasi Menu Utama ke Sub-menu
     application.add_handler(MessageHandler(filters.Regex(r'^🚀 MENU SSH OVPN$'), menu_ssh_ovpn_main))
-    application.add_handler(MessageHandler(filters.Regex(r'^⚡ MENU VMESS$'), menu_vmess_main)) 
+    application.add_handler(MessageHandler(filters.Regex(r'^⚡ MENU VMESS$'), menu_vmess_main))
+    application.add_handler(MessageHandler(filters.Regex(r'^🌀 MENU VLESS$'), menu_vless_main)) # VLESS menu entry point
     application.add_handler(MessageHandler(filters.Regex(r'^🛡️ MENU TROJAN$'), menu_trojan_main))
-    application.add_handler(MessageHandler(filters.Regex(r'^👻 MENU SHDWSK$'), menu_shdwsk_main)) 
+    application.add_handler(MessageHandler(filters.Regex(r'^👻 MENU SHDWSK$'), menu_shdwsk_main))
 
     # Tombol 'Back'
     application.add_handler(MessageHandler(filters.Regex(r'^🔙 Back to Main Menu$'), back_to_main_menu))
-    application.add_handler(MessageHandler(filters.Regex(r'^🔙 Back to Admin Menu$'), back_to_main_menu)) 
+    application.add_handler(MessageHandler(filters.Regex(r'^🔙 Back to Admin Menu$'), back_to_main_menu))
 
     # Handlers untuk tombol di Sub-Menu Trojan
     application.add_handler(MessageHandler(filters.Regex(r'^🆓 CREATE TRIAL TROJAN$'), create_trial_trojan_handler))
@@ -1199,11 +1380,14 @@ def main() -> None:
 
     # Handlers untuk tombol di Sub-Menu VMESS
     application.add_handler(MessageHandler(filters.Regex(r'^🆓 CREATE TRIAL VMESS$'), create_trial_vmess_handler))
-    application.add_handler(MessageHandler(filters.Regex(r'^📊 CHECK VMESS SERVICE$'), check_vmess_service_handler)) 
-    
+    application.add_handler(MessageHandler(filters.Regex(r'^📊 CHECK VMESS SERVICE$'), check_vmess_service_handler))
+
+    # Handlers untuk tombol di Sub-Menu VLESS
+    application.add_handler(MessageHandler(filters.Regex(r'^📊 CHECK VLESS SERVICE$'), check_vless_service_handler)) # Moved from general to VLESS menu
+
     # Handlers untuk tombol di Sub-Menu SSH OVPN
     application.add_handler(MessageHandler(filters.Regex(r'^ℹ️ INFO SSH OVPN$'), info_ssh_ovpn_handler))
-    
+
     # SSH OVPN Conversation Handler
     ssh_ovpn_conv_handler = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex(r'^➕ CREATE AKUN SSH$'), create_akun_ssh_handler)],
@@ -1219,22 +1403,26 @@ def main() -> None:
     )
     application.add_handler(ssh_ovpn_conv_handler)
 
-    # Handlers untuk tombol menu umum lainnya
-    application.add_handler(MessageHandler(filters.Regex(r'^🌀 MENU VLESS$'), menu_vless_handler))
-    application.add_handler(MessageHandler(filters.Regex(r'^👻 MENU SHDWSK$'), menu_shdwsk_handler)) 
+    # General (old placement, now mostly for SHDWSK unless moved)
+    application.add_handler(MessageHandler(filters.Regex(r'^👻 MENU SHDWSK$'), menu_shdwsk_handler))
 
     # Handlers KHUSUS ADMIN
     application.add_handler(MessageHandler(filters.Regex(r'^🔍 CHECK SERVICE$'), check_service_admin_handler))
-    application.add_handler(MessageHandler(filters.Regex(r'^⚙️ OTHER SETTING$'), other_setting_admin_handler))
-    application.add_handler(MessageHandler(filters.Regex(r'^👥 MANAGE USERS$'), manage_users_main)) 
+    # Removed: application.add_handler(MessageHandler(filters.Regex(r'^⚙️ OTHER SETTING$'), other_setting_admin_handler))
+    application.add_handler(MessageHandler(filters.Regex(r'^👥 MANAGE USERS$'), manage_users_main))
     application.add_handler(MessageHandler(filters.Regex(r'^📜 Riwayat Transaksi Admin$'), view_all_transactions_admin_handler))
-    
+
+    # New: Settings menu and its handlers
+    application.add_handler(MessageHandler(filters.Regex(r'^⚙️ Settings$'), settings_main_menu))
+    application.add_handler(MessageHandler(filters.Regex(r'^Change SSH Host \(Placeholder\)$'), handle_change_ssh_host_placeholder))
+
+
     # Handlers untuk User Biasa (Cek Saldo & Riwayat Transaksi)
     application.add_handler(MessageHandler(filters.Regex(r'^💳 Cek Saldo$'), check_balance_user_handler))
     application.add_handler(MessageHandler(filters.Regex(r'^📜 Riwayat Transaksi$'), view_transactions_user_handler))
 
     # Handler TOPUP dan REFRESH
-    application.add_handler(MessageHandler(filters.Regex(r'^💰 TOPUP SALDO \[QRIS\]$'), topup_saldo_handler)) 
+    application.add_handler(MessageHandler(filters.Regex(r'^💰 TOPUP SALDO \[QRIS\]$'), topup_saldo_handler))
     application.add_handler(MessageHandler(filters.Regex(r'^🔄 REFRESH$'), refresh_handler))
 
     # --- CONVERSATION HANDLERS (Didefinisikan setelah semua handler step-nya) ---
@@ -1247,14 +1435,28 @@ def main() -> None:
             VMESS_GET_QUOTA: [MessageHandler(filters.TEXT & ~filters.COMMAND, vmess_get_quota)],
             VMESS_GET_IP_LIMIT: [MessageHandler(filters.TEXT & ~filters.COMMAND, vmess_get_ip_limit)],
         },
-        fallbacks=[CommandHandler("cancel", cancel_conversation), MessageHandler(filters.COMMAND, cancel_conversation)], 
-        allow_reentry=True 
+        fallbacks=[CommandHandler("cancel", cancel_conversation), MessageHandler(filters.COMMAND, cancel_conversation)],
+        allow_reentry=True
     )
     application.add_handler(vmess_conv_handler)
 
+    # VLESS Conversation Handler
+    vless_conv_handler = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex(r'^➕ CREATE AKUN VLESS$'), create_akun_vless_start)],
+        states={
+            VLESS_GET_USERNAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, vless_get_username)],
+            VLESS_GET_EXPIRED_DAYS: [MessageHandler(filters.TEXT & ~filters.COMMAND, vless_get_expired_days)],
+            VLESS_GET_QUOTA: [MessageHandler(filters.TEXT & ~filters.COMMAND, vless_get_quota)],
+            VLESS_GET_IP_LIMIT: [MessageHandler(filters.TEXT & ~filters.COMMAND, vless_get_ip_limit)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel_conversation), MessageHandler(filters.COMMAND, cancel_conversation)],
+        allow_reentry=True
+    )
+    application.add_handler(vless_conv_handler)
+
     # Shadowsocks Conversation Handler
     shadowsocks_conv_handler = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex(r'^➕ CREATE AKUN SHDWSK$'), create_akun_shdwsk_handler)], 
+        entry_points=[MessageHandler(filters.Regex(r'^➕ CREATE AKUN SHDWSK$'), create_akun_shdwsk_handler)],
         states={
             SHADOWSOCKS_GET_USERNAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, shdwsk_get_username)],
             SHADOWSOCKS_GET_EXPIRED_DAYS: [MessageHandler(filters.TEXT & ~filters.COMMAND, shdwsk_get_expired_days)],
@@ -1305,7 +1507,6 @@ def main() -> None:
 
     # Fallback Handler (paling akhir)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, unknown))
-
 
     logger.info("Bot running in polling mode...")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
