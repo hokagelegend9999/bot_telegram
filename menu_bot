@@ -1,0 +1,35 @@
+#!/bin/bash
+
+# Warna untuk output
+GREEN='\033[0;32m'
+NC='\033[0m' # No Color
+
+echo -e "${GREEN}🚀 Memulai proses instalasi bot dari GitHub...${NC}"
+
+# 1. Pindah ke direktori sementara
+cd /tmp || exit
+
+# 2. Unduh file ZIP dari GitHub
+echo -e "${GREEN}📥 Mengunduh bot.zip...${NC}"
+wget -q --show-progress https://github.com/hokagelegend9999/bot_telegram/raw/refs/heads/main/bot.zip
+
+# 3. Ekstrak isi zip
+echo -e "${GREEN}📂 Mengekstrak file...${NC}"
+unzip -q bot.zip -d bot_folder
+
+# 4. Masuk ke folder hasil ekstrak
+cd bot_folder || exit
+
+# 5. Salin dan beri izin eksekusi setiap file
+echo -e "${GREEN}📁 Menyalin file ke /usr/bin dan memberi izin eksekusi...${NC}"
+for file in *; do
+    sudo cp "$file" /usr/bin/
+    sudo chmod +x "/usr/bin/$file"
+    echo -e "${GREEN}✓ $file berhasil dipasang di /usr/bin${NC}"
+done
+
+# 6. Bersihkan file sementara
+cd /tmp
+rm -rf bot.zip bot_folder
+
+echo -e "${GREEN}✅ Instalasi selesai! Kamu bisa menjalankan bot dari terminal.${NC}"
