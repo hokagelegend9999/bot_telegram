@@ -28,8 +28,8 @@ fi
 # --- Meminta Input dari Pengguna ---
 clear
 echo -e "${GREEN}=====================================================${NC}"
-echo -e "${GREEN} Selamat Datang di Installer Otomatis Jualan Bot ${NC}"
-echo -e "${GREEN}             (Versi Final dan Stabil)              ${NC}"
+echo -e "${GREEN} Selamat Datang di Hokage Legend Bot Telegram    ${NC}"
+echo -e "${GREEN}           (Harus Install Script Genom)            ${NC}"
 echo -e "${GREEN}=====================================================${NC}"
 echo "Pastikan Anda sudah mengubah jualan.py di GitHub"
 echo "untuk menggunakan placeholder __BOT_TOKEN__ dan __ADMIN_IDS__."
