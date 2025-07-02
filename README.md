@@ -36,6 +36,7 @@ wget https://raw.githubusercontent.com/hokagelegend9999/bot_telegram/refs/heads/
 ```
 ## HAPUS SCRIPT
 
-``rm uninstall
+```
+rm uninstall
 wget https://raw.githubusercontent.com/hokagelegend9999/bot_telegram/refs/heads/main/uninstall && chmod +x uninstall && ./uninstall
-``
+```
