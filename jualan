@@ -20,11 +20,8 @@ logging.basicConfig(
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
-# --- KONFIGURASI BOT ---
-BOT_TOKEN = '7948291780:AAGMIaOD1cS2l_SZZq6DejAU14VlAWu-sDU'
-
-# Daftar Telegram User ID yang menjadi ADMIN
-ADMIN_IDS = [1469244768, 987654321] # <--- GANTI DENGAN USER ID TELEGRAM ADMIN ANDA!
+BOT_TOKEN = '__BOT_TOKEN__'
+ADMIN_IDS = [__ADMIN_IDS__]
 
 # Nama file database
 DB_FILE = '/usr/bin/jualan.db'
