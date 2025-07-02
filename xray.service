@@ -1,0 +1,31 @@
+#!/bin/bash
+
+# Direktori sementara yang aman untuk menyimpan config bersih
+# /run adalah tmpfs, jadi file akan hilang saat reboot (ini bagus)
+mkdir -p /run/xray
+
+# Membersihkan config.json dari baris komentar dan menyimpannya ke file baru
+# grep -v akan membuang semua baris yang mengandung pola '#'.
+grep -v '#' /etc/xray/config.json > /run/xray/config.json
+
+# Menjalankan xray dengan file konfigurasi yang sudah bersih
+/usr/local/bin/xray run -config /run/xray/config.json
+root@ubuntu-s-1vcpu-2gb-70gb-intel-sgp1-01:~# cat /etc/systemd/system/xray.service
+[Unit]
+Description=Xray Service
+Documentation=https://github.com/xtls
+After=network.target nss-lookup.target
+
+[Service]
+User=www-data
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+ExecStart=/usr/local/bin/run-xray.sh
+Restart=on-failure
+RestartPreventExitStatus=23
+LimitNPROC=10000
+LimitNOFILE=1000000
+
+[Install]
+WantedBy=multi-user.target
