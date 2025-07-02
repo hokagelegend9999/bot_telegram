@@ -27,7 +27,7 @@ ADMIN_IDS = [__ADMIN_IDS__]
 DB_FILE = '/usr/bin/jualan.db'
 
 # --- KONFIGURASI SSH KE VPS ---
-SSH_HOST = "localhost"
+SSH_HOST = "127.0.0.1"
 SSH_USERNAME = os.getenv("SSH_USERNAME", "root")
 SSH_PASSWORD = os.getenv("SSH_PASSWORD", "")
 
