@@ -81,7 +81,7 @@ SCRIPTS=(
     "jualan.py" "addss-bot" "addssh-bot" "addvless-bot" "addws-bot"
     "bot-backup" "bot-cek-login-ssh" "bot-trial" "bot-trialtrojan"
     "bot-trialvless" "bot-trialws" "bot-trialss" "bot-vps-info"
-    "resservice" "bot-cek-vless" "bot-cek-vmess"
+    "resservice" "bot-cek-vless" "bot-cek-vmess" "qris.jpg" "bot-backup"
 )
 for script_name in "${SCRIPTS[@]}"; do
     echo -n "  -> Mengunduh ${script_name}..."
