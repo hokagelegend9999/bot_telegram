@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # =================================================================================
+# SOURCES Script GENOM V3 Ubuntu 24 Debian 12 
 # Installer Otomatis Jualan Bot v4 (Paling Stabil)
 # - Menginstal dependensi yang benar untuk Ubuntu 24.
 # - Menampilkan output instalasi untuk debugging.
