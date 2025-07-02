@@ -1,0 +1,135 @@
+#!/bin/bash
+
+# =================================================================================
+# Skrip Akun Trial VLESS (Non-Interaktif)
+# Disesuaikan untuk Bot Telegram dan Konfigurasi Nginx Kustom
+# =================================================================================
+
+# --- Konfigurasi Trial ---
+# Durasi trial. '2 hours' berarti akun akan expired dalam 2 jam.
+TRIAL_DURATION="2 hours"
+# Batas Kuota (dalam GB) dan IP untuk akun trial
+QUOTA_GB="1"
+IP_LIMIT="2"
+
+# --- Pengaturan Variabel ---
+domain=$(cat /etc/xray/domain)
+user=TrialVL-`head /dev/urandom | tr -dc A-Z0-9 | head -c4`
+uuid=$(cat /proc/sys/kernel/random/uuid)
+exp=$(date -d "$TRIAL_DURATION" +"%Y-%m-%d %H:%M:%S") # Dapatkan tanggal dan waktu kadaluarsa
+
+# --- Proses Penambahan User ke Konfigurasi Xray ---
+# Menambahkan baris komentar dan baris user baru ke dalam config.json
+# Ini dilakukan untuk inbound vless ws dan vless grpc
+sed -i '/#vless$/a\#& '"$user $exp"'\
+,{"id": "'""$uuid""'","email": "'""$user""'"' /etc/xray/config.json
+sed -i '/#vlessgrpc$/a\#& '"$user $exp"'\
+,{"id": "'""$uuid""'","email": "'""$user""'"' /etc/xray/config.json
+
+# --- Membuat Link VLESS ---
+vlesslink1="vless://${uuid}@${domain}:443?path=/vless&security=tls&encryption=none&type=ws#${user}"
+vlesslink2="vless://${uuid}@${domain}:80?path=/vless&encryption=none&type=ws#${user}"
+vlesslink3="vless://${uuid}@${domain}:443?mode=gun&security=tls&encryption=none&type=grpc&serviceName=vless-grpc&sni=${domain}#${user}"
+
+# --- Membuat File Konfigurasi OpenClash untuk Web Download ---
+# DIUBAH: Menyesuaikan path ke direktori root Nginx Anda
+mkdir -p /home/vps/public_html
+cat > "/home/vps/public_html/vless-$user.txt" <<-END
+# Config VLESS by Hokage Legend
+# Server: ${domain}
+# User: ${user}
+# Expired: ${exp}
+
+proxies:
+- name: VLESS-WS-TLS-${user}
+  server: ${domain}
+  port: 443
+  type: vless
+  uuid: ${uuid}
+  cipher: auto
+  tls: true
+  skip-cert-verify: true
+  servername: ${domain}
+  network: ws
+  ws-opts:
+    path: /vless
+    headers:
+      Host: ${domain}
+  udp: true
+
+- name: VLESS-WS-NTLS-${user}
+  server: ${domain}
+  port: 80
+  type: vless
+  uuid: ${uuid}
+  cipher: auto
+  tls: false
+  network: ws
+  ws-opts:
+    path: /vless
+    headers:
+      Host: ${domain}
+  udp: true
+
+- name: VLESS-gRPC-${user}
+  server: ${domain}
+  port: 443
+  type: vless
+  uuid: ${uuid}
+  cipher: auto
+  tls: true
+  skip-cert-verify: true
+  servername: ${domain}
+  network: grpc
+  grpc-opts:
+    grpc-mode: gun
+    grpc-service-name: vless-grpc
+  udp: true
+END
+
+# --- Menyimpan ke Database Teks Lokal & Limit ---
+# Untuk .vless.db
+touch /etc/vless/.vless.db
+sed -i "/\b${user}\b/d" /etc/vless/.vless.db
+echo "#& ${user} ${exp} ${uuid} ${QUOTA_GB} ${IP_LIMIT}" >>/etc/vless/.vless.db
+
+# Untuk Quota
+c=$(echo "${QUOTA_GB}" | sed 's/[^0-9]*//g')
+d=$((${c} * 1024 * 1024 * 1024))
+if [[ ${c} != "0" ]]; then
+    mkdir -p /etc/vless
+    echo "${d}" >/etc/vless/${user}
+fi
+
+# Untuk IP Limit
+if [[ "$IP_LIMIT" -gt 0 ]]; then
+    mkdir -p /etc/kyt/limit/vless/ip # Sesuaikan path jika berbeda
+    echo "$IP_LIMIT" > /etc/kyt/limit/vless/ip/$user
+fi
+
+
+# --- Restart Layanan ---
+systemctl restart xray > /dev/null 2>&1
+
+# --- Cetak Output untuk Bot Telegram ---
+echo "✅ Akun Trial VLESS Berhasil Dibuat"
+echo "==================================="
+echo "Remarks       : ${user}"
+echo "Domain        : ${domain}"
+echo "Masa Aktif    : 2 Jam"
+echo "-----------------------------------"
+echo "VLESS WS TLS  : "
+echo "${vlesslink1}"
+echo "-----------------------------------"
+echo "VLESS WS NTLS : "
+echo "${vlesslink2}"
+echo "-----------------------------------"
+echo "VLESS gRPC    : "
+echo "${vlesslink3}"
+echo "-----------------------------------"
+# DIUBAH: Menggunakan http dan port 89
+echo "Config Clash  : http://${domain}:89/vless-${user}.txt"
+echo "==================================="
+echo "Akun akan expired dalam 2 jam."
+
+exit 0
