@@ -26,4 +26,12 @@ Environment="SSH_PASSWORD=GANTI_DENGAN_PASSWORD_ROOT_ANDA" # GANTI DENGAN PASSWO
 WantedBy=multi-user.target
 
 - sudo chmod 600 /etc/systemd/system/jualan_bot.service
+
+
+INSTALL 
+
+```
+rm install
+wget https://raw.githubusercontent.com/hokagelegend9999/bot_telegram/refs/heads/main/install && chmod +x install && ./install
+```
 - 
