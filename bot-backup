@@ -1,73 +1,93 @@
 #!/bin/bash
-# // ─────────────────────────────────── #
-# //    Arthur : FV STORE Tunneling
-# //    My Telegram: @fv_stores
-# //    Channel Telegram: t.me/fv_storeid
-# //    Group Telegram: t.me/Grup_ConfigId
-# //    Description: Auto Script Project FV STORE
-# //    Support OS: Debian 10 & Ubuntu 18/20
-# // ─────────────────────────────────── #
-red() { echo -e "\\033[32;1m${*}\\033[0m"; }
-IP=$(curl -s ipv4.icanhazip.com)
-HOST="$(cat /etc/xray/domain)"
-DATEVPS=$(date +"%d-%B-%Y")
-ISPVPS=$(cat /etc/xray/isp)
-CITY=$(cat /etc/xray/city)
-GREEN="\e[92;1m"
-BLUE="\033[36m"
-RED='\033[0;31m'
-NC='\033[0m'
-function BACKUPVPS() {
-    rm -rf /root/backup
-    mkdir /root/backup
-    cp /etc/passwd backup/
-    cp /etc/group backup/
-    cp /etc/shadow backup/
-    cp /etc/gshadow backup/
-    cp /etc/crontab backup/
-    cp -r /var/lib/kyt/ backup/kyt 
-    cp -r /etc/xray backup/xray
-    cp -r /var/www/html/ backup/html
-    cp -r /etc/ssh/.ssh.db backup/ssh.db
-    cp -r /etc/vmess/.vmess.db backup/vmess.db
-    cp -r /etc/vless/.vless.db backup/vless.db
-    cp -r /etc/trojan/.trojan.db backup/trojan.db
-    cp -r /etc/shadowsocks/.shadowsocks.db backup/shadowsocks.db
-    cd /root
-    zip -r $IP-$DATEVPS.zip backup > /dev/null 2>&1
-    rclone copy /root/$IP-$DATEVPS.zip dr:backup/
-    url=$(rclone link dr:backup/$IP-$DATEVPS.zip)
-    id=(`echo $url | grep '^https' | cut -d'=' -f2`)
-    link="https://drive.google.com/u/4/uc?id=${id}&export=download"
-    rm -rf backup
-    rm -rf $IP-$DATEVPSVPS.zip
-    echo "
-_______________________________________
-SUCCESSFULL BACKUP YOUR VPS
-Please Save The Following Data
-_______________________________________
-YOUR VPS IP : $IP
-DOMAIN      : $HOST
-DATE        : $DATEVPS
-ISP         : $ISPVPS
-LOCATION    : $CITY
-LINK BACKUP : $link
-_______________________________________
-Report bugs   : https://t.me/LunaticTunnel
-LunaticTunnel Project
-    " | mail -s "LunaticTunneling Backup" $EMAIL
-    echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo -e "SUCCESSFULL BACKUP YOUR VPS"
-    echo -e "Please Save The Following Data"
-    echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo -e "Your VPS IP : $IP"
-    echo -e "DOMAIN      : $HOST"
-    echo -e "DATE        : $DATEVPS"
-    echo -e "ISP         : $ISPVPS"
-    echo -e "LOCATION    : $CITY"
-    echo -e "LINK BACKUP : $link"
-    echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo -e "Please Check your Email backup file"
 
-}
-BACKUPVPS
+# =================================================================================
+# Skrip Backup VPS yang Diperbaiki dan Dibuat Lebih Tangguh
+# - Hanya mem-backup file/direktori yang ada.
+# - Menambahkan backup database bot utama (jualan.db).
+# - Menghapus fungsionalitas email yang rusak.
+# - Menyesuaikan path web root.
+# =================================================================================
+
+# Cek apakah rclone terinstal
+if ! command -v rclone &> /dev/null; then
+    echo "Error: rclone tidak terinstal."
+    echo "Silakan instal dengan 'sudo apt install rclone' dan konfigurasikan terlebih dahulu."
+    exit 1
+fi
+
+# --- Variabel ---
+IP=$(curl -s ipv4.icanhazip.com)
+HOST=$(cat /etc/xray/domain)
+DATEVPS=$(date +"%d-%B-%Y")
+BACKUP_DIR="/root/backup"
+ZIP_FILE="/root/${IP}-${DATEVPS}.zip"
+
+# --- Mulai Proses Backup ---
+
+# Bersihkan dan buat direktori backup sementara
+rm -rf ${BACKUP_DIR}
+mkdir -p ${BACKUP_DIR}
+
+# Backup file-file sistem dasar
+cp /etc/passwd ${BACKUP_DIR}/
+cp /etc/group ${BACKUP_DIR}/
+cp /etc/shadow ${BACKUP_DIR}/
+cp /etc/gshadow ${BACKUP_DIR}/
+
+# Backup database bot utama (SANGAT PENTING)
+if [ -f /usr/bin/jualan.db ]; then
+    cp /usr/bin/jualan.db ${BACKUP_DIR}/
+fi
+
+# Backup direktori web sesuai konfigurasi Nginx Anda
+if [ -d /home/vps/public_html ]; then
+    cp -r /home/vps/public_html ${BACKUP_DIR}/html
+fi
+
+# Backup database teks akun (hanya jika ada)
+if [ -f /etc/ssh/.ssh.db ]; then cp /etc/ssh/.ssh.db ${BACKUP_DIR}/; fi
+if [ -f /etc/vmess/.vmess.db ]; then cp /etc/vmess/.vmess.db ${BACKUP_DIR}/; fi
+if [ -f /etc/vless/.vless.db ]; then cp /etc/vless/.vless.db ${BACKUP_DIR}/; fi
+if [ -f /etc/trojan/.trojan.db ]; then cp /etc/trojan/.trojan.db ${BACKUP_DIR}/; fi
+if [ -f /etc/shadowsocks/.shadowsocks.db ]; then cp /etc/shadowsocks/.shadowsocks.db ${BACKUP_DIR}/; fi
+
+# Backup konfigurasi Xray jika ada
+if [ -d /etc/xray ]; then cp -r /etc/xray ${BACKUP_DIR}/; fi
+
+# Backup direktori kyt jika ada
+if [ -d /var/lib/kyt ]; then cp -r /var/lib/kyt ${BACKUP_DIR}/kyt; fi
+
+# --- Proses Kompresi dan Upload ---
+
+cd /root
+zip -r ${ZIP_FILE} backup > /dev/null 2>&1
+
+# Upload ke rclone remote bernama 'dr' ke dalam folder 'backup'
+# Ganti 'dr:' dengan nama remote rclone Anda jika berbeda
+rclone copy "${ZIP_FILE}" dr:backup/ -P
+
+# Membuat link download (jika remote mendukung fitur ini)
+url=$(rclone link dr:backup/$(basename "${ZIP_FILE}"))
+
+# Bersihkan file lokal setelah diunggah
+rm -rf ${BACKUP_DIR}
+rm -f "${ZIP_FILE}"
+
+# --- Menampilkan Output untuk Bot ---
+echo "✅ Backup VPS Berhasil Dibuat"
+echo "==================================="
+echo "IP VPS      : $IP"
+echo "Domain      : $HOST"
+echo "Tanggal     : $DATEVPS"
+echo "-----------------------------------"
+echo "Link Backup : "
+# Cek jika link berhasil dibuat
+if [ -n "$url" ]; then
+    echo "$url"
+else
+    echo "Gagal membuat link. Silakan cek file di Google Drive Anda."
+fi
+echo "==================================="
+echo "Pastikan Anda menyimpan link di atas."
+
+exit 0
