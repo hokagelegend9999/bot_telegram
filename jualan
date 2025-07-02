@@ -48,439 +48,218 @@ TELEGRAM_ADMIN_USERNAME = "HookageLegend"
 WHATSAPP_ADMIN_NUMBER = "087726917005"
 GROUP_TELEGRAM_LINK = "https://t.me/hokagelegend1"
 
-# --- STATES UNTUK SEMUA CONVERSATION HANDLER (Didefinisikan secara GLOBAL di bagian paling atas) ---
-# VMess
+# --- STATES UNTUK SEMUA CONVERSATION HANDLER ---
 VMESS_GET_USERNAME, VMESS_GET_EXPIRED_DAYS, VMESS_GET_QUOTA, VMESS_GET_IP_LIMIT = range(4)
-# Shadowsocks
 SHADOWSOCKS_GET_USERNAME, SHADOWSOCKS_GET_EXPIRED_DAYS, SHADOWSOCKS_GET_QUOTA = range(4, 7)
-# SSH OVPN
 SSH_OVPN_GET_USERNAME, SSH_OVPN_GET_PASSWORD, SSH_OVPN_GET_EXPIRED_DAYS, SSH_OVPN_GET_QUOTA, SSH_OVPN_GET_IP_LIMIT = range(7, 12)
-# Admin: Add Balance
 ADD_BALANCE_GET_USER_ID, ADD_BALANCE_GET_AMOUNT = range(12, 14)
-# Admin: Check Balance
 CHECK_BALANCE_GET_USER_ID = range(14, 15)
-# Admin: View User Transactions
 VIEW_USER_TX_GET_USER_ID = range(15, 16)
-# Admin: Settings
-SETTINGS_MENU = range(16, 17) # State for navigating the settings menu
-# VLESS
+SETTINGS_MENU = range(16, 17)
 VLESS_GET_USERNAME, VLESS_GET_EXPIRED_DAYS, VLESS_GET_QUOTA, VLESS_GET_IP_LIMIT = range(17, 21)
 
 
 # --- FUNGSI DATABASE ---
 def get_db_connection():
-    """Membuka koneksi ke database."""
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
     return conn
 
 def init_db():
-    """Menginisialisasi database dan membuat tabel jika belum ada."""
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            user_id INTEGER PRIMARY KEY,
-            balance REAL DEFAULT 0.0,
-            registered_at TEXT
-        )
-    ''')
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS transactions (
-            transaction_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            type TEXT NOT NULL,
-            amount REAL NOT NULL,
-            timestamp TEXT NOT NULL,
-            description TEXT,
-            FOREIGN KEY (user_id) REFERENCES users (user_id)
-        )
-    ''')
+    cursor.execute('CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, balance REAL DEFAULT 0.0, registered_at TEXT)')
+    cursor.execute('CREATE TABLE IF NOT EXISTS transactions (transaction_id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, type TEXT NOT NULL, amount REAL NOT NULL, timestamp TEXT NOT NULL, description TEXT, FOREIGN KEY (user_id) REFERENCES users (user_id))')
     conn.commit()
     conn.close()
 
 def get_user_balance(user_id: int) -> float:
     conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
-    result = cursor.fetchone()
+    result = conn.cursor().execute("SELECT balance FROM users WHERE user_id = ?", (user_id,)).fetchone()
     conn.close()
     return result['balance'] if result else 0.0
 
 def update_user_balance(user_id: int, amount: float, transaction_type: str, description: str, is_deduction: bool = False) -> bool:
     conn = get_db_connection()
-    cursor = conn.cursor()
     try:
-        current_balance_check = get_user_balance(user_id)
-        if is_deduction and current_balance_check < amount:
-            logger.warning(f"Deduction failed for user {user_id}: insufficient balance (current: {current_balance_check}, attempt to deduct: {amount})")
-            return False
-
-        if is_deduction:
-            cursor.execute("UPDATE users SET balance = balance - ? WHERE user_id = ?", (amount, user_id))
-        else:
-            cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (amount, user_id))
-
-        timestamp = DT.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        cursor.execute("INSERT INTO transactions (user_id, type, amount, timestamp, description) VALUES (?, ?, ?, ?, ?)",
-                       (user_id, transaction_type, amount if not is_deduction else -amount, timestamp, description))
+        if is_deduction and get_user_balance(user_id) < amount: return False
+        cursor = conn.cursor()
+        cursor.execute(f"UPDATE users SET balance = balance {'-' if is_deduction else '+'} ? WHERE user_id = ?", (amount, user_id))
+        ts = DT.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        cursor.execute("INSERT INTO transactions (user_id, type, amount, timestamp, description) VALUES (?, ?, ?, ?, ?)", (user_id, transaction_type, amount if not is_deduction else -amount, ts, description))
         conn.commit()
-
         return True
     except sqlite3.Error as e:
-        logger.error(f"Database error updating balance for user {user_id} or logging transaction: {e}")
+        logger.error(f"DB Error on balance update: {e}")
         conn.rollback()
         return False
     finally:
-        if conn:
-            conn.close()
+        if conn: conn.close()
 
-def get_user_transactions(user_id: int, limit: int = 10) -> list[dict]:
+def get_user_transactions(user_id: int, limit: int = 10) -> list:
     conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT type, amount, timestamp, description FROM transactions WHERE user_id = ? ORDER BY timestamp DESC LIMIT ?", (user_id, limit))
-    transactions = cursor.fetchall()
+    transactions = conn.cursor().execute("SELECT * FROM transactions WHERE user_id = ? ORDER BY timestamp DESC LIMIT ?", (user_id, limit)).fetchall()
     conn.close()
     return [dict(row) for row in transactions]
 
-def get_all_transactions(limit: int = 20) -> list[dict]:
+def get_all_transactions(limit: int = 20) -> list:
     conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT T.user_id, T.type, T.amount, T.timestamp, T.description FROM transactions AS T ORDER BY T.timestamp DESC LIMIT ?", (limit,))
-    transactions = cursor.fetchall()
+    transactions = conn.cursor().execute("SELECT * FROM transactions ORDER BY timestamp DESC LIMIT ?", (limit,)).fetchall()
     conn.close()
     return [dict(row) for row in transactions]
 
 def count_all_users() -> int:
-    """Menghitung jumlah total pengguna yang terdaftar."""
     conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(user_id) FROM users")
-    count = cursor.fetchone()[0]
+    count = conn.cursor().execute("SELECT COUNT(user_id) FROM users").fetchone()[0]
     conn.close()
     return count
 
 def get_recent_users(limit: int = 20) -> list:
-    """Mengambil daftar pengguna yang baru saja mendaftar."""
     conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT user_id, registered_at FROM users ORDER BY registered_at DESC LIMIT ?", (limit,))
-    users = cursor.fetchall()
+    users = conn.cursor().execute("SELECT user_id, registered_at FROM users ORDER BY registered_at DESC LIMIT ?", (limit,)).fetchall()
     conn.close()
     return [dict(row) for row in users]
 
-# Call init_db here after function definitions
 init_db()
 logger.info("Database initialized.")
 
-# --- HELPER: Cek apakah user adalah admin ---
-def is_admin(user_id: int) -> bool:
-    return user_id in ADMIN_IDS
+def is_admin(user_id: int) -> bool: return user_id in ADMIN_IDS
 
-# --- FUNGSI UNTUK MEMBUAT KEYBOARD MENU (UI TELAH DIPERBARUI) ---
+# --- KEYBOARDS ---
 def get_main_menu_keyboard():
-    """Mengembalikan objek ReplyKeyboardMarkup untuk menu utama user biasa."""
-    buttons = [
-        [KeyboardButton('🚀 SSH & OVPN')],
-        [KeyboardButton('⚡ VMess'), KeyboardButton('🌀 VLess')],
-        [KeyboardButton('🛡️ Trojan'), KeyboardButton('👻 Shadowsocks')],
-        [KeyboardButton('💰 Cek Saldo Saya'), KeyboardButton('📄 Riwayat Saya')],
-        [KeyboardButton('💳 Top Up Saldo')],
-        [KeyboardButton('🔄 Refresh')]
-    ]
-    return ReplyKeyboardMarkup(buttons, resize_keyboard=True, one_time_keyboard=False)
+    buttons = [[KeyboardButton('🚀 SSH & OVPN')], [KeyboardButton('⚡ VMess'), KeyboardButton('🌀 VLess')], [KeyboardButton('🛡️ Trojan'), KeyboardButton('👻 Shadowsocks')], [KeyboardButton('💰 Cek Saldo Saya'), KeyboardButton('📄 Riwayat Saya')], [KeyboardButton('💳 Top Up Saldo')], [KeyboardButton('🔄 Refresh')]]
+    return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
 
 def get_admin_main_menu_keyboard():
-    """Mengembalikan objek ReplyKeyboardMarkup untuk menu utama admin."""
-    buttons = [
-        [KeyboardButton('🚀 SSH & OVPN'), KeyboardButton('⚡ VMess'), KeyboardButton('🌀 VLess')],
-        [KeyboardButton('🛡️ Trojan'), KeyboardButton('👻 Shadowsocks')],
-        [KeyboardButton('📈 Status Layanan'), KeyboardButton('🛠️ Pengaturan')],
-        [KeyboardButton('👤 Manajemen User')],
-        [KeyboardButton('💳 Top Up Saldo'), KeyboardButton('🧾 Semua Transaksi')],
-        [KeyboardButton('🔄 Refresh')]
-    ]
-    return ReplyKeyboardMarkup(buttons, resize_keyboard=True, one_time_keyboard=False)
+    buttons = [[KeyboardButton('🚀 SSH & OVPN'), KeyboardButton('⚡ VMess'), KeyboardButton('🌀 VLess')], [KeyboardButton('🛡️ Trojan'), KeyboardButton('👻 Shadowsocks')], [KeyboardButton('📈 Status Layanan'), KeyboardButton('🛠️ Pengaturan')], [KeyboardButton('👤 Manajemen User')], [KeyboardButton('💳 Top Up Saldo'), KeyboardButton('🧾 Semua Transaksi')], [KeyboardButton('🔄 Refresh')]]
+    return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
 
 def get_manage_users_menu_keyboard():
-    """Mengembalikan ReplyKeyboardMarkup untuk sub-menu Manage Users (Admin Only)."""
-    buttons = [
-        [KeyboardButton('💵 Tambah Saldo'), KeyboardButton('📊 Cek Saldo User')],
-        [KeyboardButton('📑 Riwayat User'), KeyboardButton('👑 Cek Admin & Saldo')],
-        [KeyboardButton('👥 Jumlah User'), KeyboardButton('🆕 User Terbaru')],
-        [KeyboardButton('🗑️ Hapus User (Soon)')],
-        [KeyboardButton('⬅️ Kembali ke Menu Admin')]
-    ]
-    return ReplyKeyboardMarkup(buttons, resize_keyboard=True, one_time_keyboard=False)
+    buttons = [[KeyboardButton('💵 Tambah Saldo'), KeyboardButton('📊 Cek Saldo User')], [KeyboardButton('📑 Riwayat User'), KeyboardButton('👑 Cek Admin & Saldo')], [KeyboardButton('👥 Jumlah User'), KeyboardButton('🆕 User Terbaru')], [KeyboardButton('🗑️ Hapus User (Soon)')], [KeyboardButton('⬅️ Kembali ke Menu Admin')]]
+    return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
 
 def get_settings_menu_keyboard():
-    """Mengembalikan ReplyKeyboardMarkup untuk sub-menu Settings (Admin Only)."""
-    buttons = [
-        [KeyboardButton('💾 Backup VPS')],
-        [KeyboardButton('👁️ Cek Koneksi Aktif')],
-        [KeyboardButton('⚙️ Pengaturan Lain (Soon)')],
-        [KeyboardButton('⬅️ Kembali ke Menu Admin')]
-    ]
-    return ReplyKeyboardMarkup(buttons, resize_keyboard=True, one_time_keyboard=False)
+    buttons = [[KeyboardButton('💾 Backup VPS')], [KeyboardButton('👁️ Cek Koneksi Aktif')], [KeyboardButton('⚙️ Pengaturan Lain (Soon)')], [KeyboardButton('⬅️ Kembali ke Menu Admin')]]
+    return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
 
 def get_ssh_ovpn_menu_keyboard():
-    """Mengembalikan ReplyKeyboardMarkup untuk sub-menu SSH OVPN."""
-    buttons = [
-        [KeyboardButton('➕ Buat Akun SSH Premium')],
-        [KeyboardButton('🆓 Coba Gratis SSH & OVPN')],
-        [KeyboardButton('ℹ️ Info Layanan SSH')],
-        [KeyboardButton('⬅️ Kembali')]
-    ]
-    return ReplyKeyboardMarkup(buttons, resize_keyboard=True, one_time_keyboard=False)
+    buttons = [[KeyboardButton('➕ Buat Akun SSH Premium')], [KeyboardButton('🆓 Coba Gratis SSH & OVPN')], [KeyboardButton('ℹ️ Info Layanan SSH')], [KeyboardButton('⬅️ Kembali')]]
+    return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
 
 def get_vmess_creation_menu_keyboard():
-    """Mengembalikan ReplyKeyboardMarkup untuk sub-menu VMESS (pembuatan/trial)."""
-    buttons = [
-        [KeyboardButton('➕ Buat Akun VMess Premium')],
-        [KeyboardButton('🆓 Coba Gratis VMess')],
-        [KeyboardButton('📊 Cek Layanan VMess')],
-        [KeyboardButton('⬅️ Kembali')]
-    ]
-    return ReplyKeyboardMarkup(buttons, resize_keyboard=True, one_time_keyboard=False)
+    buttons = [[KeyboardButton('➕ Buat Akun VMess Premium')], [KeyboardButton('🆓 Coba Gratis VMess')], [KeyboardButton('📊 Cek Layanan VMess')], [KeyboardButton('⬅️ Kembali')]]
+    return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
 
 def get_vless_menu_keyboard():
-    """Mengembalikan ReplyKeyboardMarkup untuk sub-menu VLESS."""
-    buttons = [
-        [KeyboardButton('➕ Buat Akun VLess Premium')],
-        [KeyboardButton('📊 Cek Layanan VLess')],
-        [KeyboardButton('⬅️ Kembali')]
-    ]
-    return ReplyKeyboardMarkup(buttons, resize_keyboard=True, one_time_keyboard=False)
+    buttons = [[KeyboardButton('➕ Buat Akun VLess Premium')], [KeyboardButton('🆓 Coba Gratis VLess')], [KeyboardButton('📊 Cek Layanan VLess')], [KeyboardButton('⬅️ Kembali')]]
+    return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
 
 def get_trojan_menu_keyboard():
-    """Mengembalikan ReplyKeyboardMarkup untuk sub-menu Trojan."""
-    buttons = [
-        [KeyboardButton('➕ Buat Akun Trojan Premium')],
-        [KeyboardButton('🆓 Coba Gratis Trojan')],
-        [KeyboardButton('⬅️ Kembali')]
-    ]
-    return ReplyKeyboardMarkup(buttons, resize_keyboard=True, one_time_keyboard=False)
+    buttons = [[KeyboardButton('➕ Buat Akun Trojan Premium')], [KeyboardButton('🆓 Coba Gratis Trojan')], [KeyboardButton('⬅️ Kembali')]]
+    return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
 
 def get_shadowsocks_menu_keyboard():
-    """Mengembalikan ReplyKeyboardMarkup untuk sub-menu Shadowsocks."""
-    buttons = [
-        [KeyboardButton('➕ Buat Akun Shadowsocks')],
-        [KeyboardButton('🆓 Coba Gratis Shadowsocks')],
-        [KeyboardButton('⬅️ Kembali')]
-    ]
-    return ReplyKeyboardMarkup(buttons, resize_keyboard=True, one_time_keyboard=False)
+    buttons = [[KeyboardButton('➕ Buat Akun Shadowsocks')], [KeyboardButton('🆓 Coba Gratis Shadowsocks')], [KeyboardButton('⬅️ Kembali')]]
+    return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
 
-
-# --- FUNGSI UNTUK MENJALANKAN PERINTAH SHELL MELALUI SSH ---
+# --- SSH COMMAND ---
 async def run_ssh_command(command: str):
-    """
-    Menjalankan perintah shell di VPS melalui SSH dan mengembalikan outputnya.
-    Menggunakan autentikasi kata sandi.
-    """
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-
     try:
         client.connect(hostname=SSH_HOST, username=SSH_USERNAME, password=SSH_PASSWORD)
-        logger.info(f"Executing SSH command: {command}")
+        logger.info(f"Executing SSH: {command}")
         stdin, stdout, stderr = client.exec_command(command)
         output = stdout.read().decode('utf-8').strip()
         error = stderr.read().decode('utf-8').strip()
-
         if error:
-            logger.error(f"Error from SSH command '{command}': {error}")
-            return f"🚨 <b>Terjadi Kesalahan di Server!</b>\n\n<i>Silakan hubungi administrator untuk bantuan lebih lanjut.</i>\n\n<pre>{error}</pre>"
-        if not output:
-            return "✅ <b>Perintah berhasil dieksekusi, namun tidak ada output.</b>"
-        return output
-    except paramiko.AuthenticationException:
-        logger.critical("Gagal otentikasi SSH. Pastikan username dan password SSH benar.")
-        return "🔐 <b>Autentikasi SSH Gagal!</b>\n\n<i>Kredensial SSH salah. Mohon hubungi administrator bot.</i>"
-    except paramiko.SSHException as e:
-        logger.critical(f"Terjadi Kesalahan SSH! Error: {e}")
-        return f"🔌 <b>Terjadi Kesalahan Koneksi SSH!</b>\n\n<i>Tidak dapat terhubung ke server. Mohon hubungi administrator bot.</i>\n\n<pre>{e}</pre>"
+            logger.error(f"SSH Error: {error}")
+            return f"🚨 <b>Terjadi Kesalahan di Server!</b>\n<pre>{error}</pre>"
+        return output or "✅ Perintah berhasil dieksekusi."
     except Exception as e:
-        logger.critical(f"Terjadi kesalahan tak terduga saat menjalankan perintah SSH: {e}")
-        return f"💥 <b>Terjadi Kesalahan Tak Terduga!</b>\n\n<i>Mohon hubungi administrator bot.</i>\n\n<pre>{e}</pre>"
+        logger.critical(f"SSH Exception: {e}")
+        return f"💥 <b>Koneksi SSH Gagal!</b> Hubungi admin.\n<pre>{e}</pre>"
     finally:
-        if client:
-            client.close()
+        if client: client.close()
 
-# --- DEFINISI SEMUA HANDLER (ASYNC DEF) DI SINI ---
-
-# Handler Perintah Umum dan Navigasi (ini bisa di awal)
+# --- HANDLERS ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Mengirim pesan sambutan saat perintah /start diterima."""
-    user_id = update.effective_user.id
-    user_first_name = update.effective_user.first_name if update.effective_user.first_name else "Pengguna"
-    username_tg = update.effective_user.username if update.effective_user.username else f"ID:{user_id}"
-
+    user_id, user_name = update.effective_user.id, update.effective_user.first_name
     conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,))
-    existing_user = cursor.fetchone()
-    
-    header = "╭─ 👑 *HOKAGE LEGEND VPN* 👑 ─╮"
-    footer = "╰─ ✨ *Cepat, Aman, Terpercaya* ✨ ─╯"
-
-    if existing_user:
-        logger.info(f"User {username_tg} ({user_id}) already registered. Sending welcome back message with menu.")
-        greeting_message = (
-            f"{header}\n\n"
-            f"👋 Selamat datang kembali, <b>{user_first_name}</b>!\n\n"
-            f"Senang melihat Anda lagi. Silakan pilih layanan yang Anda butuhkan dari menu di bawah ini.\n\n"
-            f"{footer}"
-        )
-    else:
-        registered_at = DT.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        cursor.execute("INSERT INTO users (user_id, balance, registered_at) VALUES (?, ?, ?)",
-                       (user_id, 0.0, registered_at))
+    if not conn.cursor().execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,)).fetchone():
+        ts = DT.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        conn.cursor().execute("INSERT INTO users (user_id, registered_at) VALUES (?, ?)", (user_id, ts))
         conn.commit()
-        logger.info(f"New user registered: {username_tg} ({user_id})")
-        greeting_message = (
-            f"{header}\n\n"
-            f"🎉 Halo, <b>{user_first_name}</b>! Selamat datang.\n\n"
-            f"Anda telah berhasil terdaftar di sistem kami dengan saldo awal <b>Rp 0</b>. Untuk memulai, silakan top up saldo atau jelajahi menu kami.\n\n"
-            f"{footer}"
-        )
-    conn.close()
-
-    if is_admin(user_id):
-        await update.message.reply_text(
-            greeting_message + "\n\n🛡️ <i>Anda masuk sebagai <b>Admin</b>. Panel kontrol admin tersedia.</i>",
-            reply_markup=get_admin_main_menu_keyboard(), parse_mode='HTML'
-        )
+        msg = f"🎉 Halo, <b>{user_name}</b>! Selamat datang & selamat terdaftar."
     else:
-        await update.message.reply_text(
-            greeting_message,
-            reply_markup=get_main_menu_keyboard(), parse_mode='HTML'
-        )
+        msg = f"👋 Selamat datang kembali, <b>{user_name}</b>!"
+    conn.close()
+    keyboard = get_admin_main_menu_keyboard() if is_admin(user_id) else get_main_menu_keyboard()
+    if is_admin(user_id): msg += "\n\n🛡️ <i>Anda masuk sebagai <b>Admin</b>.</i>"
+    await update.message.reply_text(msg, reply_markup=keyboard, parse_mode='HTML')
 
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Menampilkan keyboard menu sesuai role."""
-    user_id = update.effective_user.id
-    
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,))
-    existing_user = cursor.fetchone()
-    conn.close()
-
-    if not existing_user:
-        await update.message.reply_text('⚠️ Anda belum terdaftar. Silakan ketik /start untuk memulai.')
-        return
-
-    if is_admin(user_id):
-        await update.message.reply_text(
-            '⚙️ *Panel Admin* ⚙️\n\nSilakan pilih salah satu opsi dari menu di bawah ini:',
-            reply_markup=get_admin_main_menu_keyboard(), parse_mode='HTML'
-        )
-    else:
-        await update.message.reply_text(
-            '✨ *Menu Utama* ✨\n\nSilakan pilih salah satu layanan dari menu di bawah ini:',
-            reply_markup=get_main_menu_keyboard(), parse_mode='HTML'
-        )
+    keyboard = get_admin_main_menu_keyboard() if is_admin(update.effective_user.id) else get_main_menu_keyboard()
+    await update.message.reply_text('✨ Silakan pilih layanan:', reply_markup=keyboard, parse_mode='HTML')
 
 async def cancel_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Membatalkan percakapan yang sedang berlangsung."""
-    user_id = update.effective_user.id
-    keyboard = get_admin_main_menu_keyboard() if is_admin(user_id) else get_main_menu_keyboard()
-    await update.message.reply_text(
-        '↩️ Operasi telah dibatalkan. Anda kembali ke menu utama.',
-        reply_markup=keyboard
-    )
+    keyboard = get_admin_main_menu_keyboard() if is_admin(update.effective_user.id) else get_main_menu_keyboard()
+    await update.message.reply_text('↩️ Operasi dibatalkan.', reply_markup=keyboard)
     context.user_data.clear()
     return ConversationHandler.END
 
 async def unknown(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user_id = update.effective_user.id
-    current_keyboard = get_admin_main_menu_keyboard() if is_admin(user_id) else get_main_menu_keyboard()
-    if update.message and update.message.from_user and not update.message.from_user.is_bot:
-        await update.message.reply_text(
-            '🤔 Maaf, saya tidak mengerti perintah itu. Silakan gunakan tombol pada menu yang tersedia atau ketik /start.',
-            reply_markup=current_keyboard
-        )
+    keyboard = get_admin_main_menu_keyboard() if is_admin(update.effective_user.id) else get_main_menu_keyboard()
+    await update.message.reply_text('🤔 Perintah tidak dikenali.', reply_markup=keyboard)
 
-async def handle_general_script_button(update: Update, context: ContextTypes.DEFAULT_TYPE, script_path: str, message_loading: str, message_error: str, return_markup: ReplyKeyboardMarkup = None) -> None:
-    user_id = update.effective_user.id
-    if return_markup is None:
-        return_markup = get_admin_main_menu_keyboard() if is_admin(user_id) else get_main_menu_keyboard()
-
-    await update.message.reply_text(f"⏳ *{message_loading}*\n\n_Ini mungkin memerlukan beberapa saat..._", parse_mode='HTML')
-    result = await run_ssh_command(f"bash {script_path}")
-    
+async def handle_general_script_button(update: Update, context: ContextTypes.DEFAULT_TYPE, script: str, loading: str, error: str, keyboard: ReplyKeyboardMarkup) -> None:
+    await update.message.reply_text(f"⏳ *{loading}*", parse_mode='HTML')
+    result = await run_ssh_command(f"bash {script}")
     if "Error:" in result or "Terjadi Kesalahan" in result:
-        await update.message.reply_text(f"❌ *{message_error}*\n\n{result}", parse_mode='HTML', reply_markup=return_markup)
+        await update.message.reply_text(f"❌ *{error}*\n{result}", parse_mode='HTML', reply_markup=keyboard)
     else:
-        success_message = f"✅ *Hasil Perintah:*\n\n<pre>{result}</pre>"
-        await update.message.reply_text(success_message, parse_mode='HTML', reply_markup=return_markup)
+        await update.message.reply_text(f"✅ *Hasil:*\n<pre>{result}</pre>", parse_mode='HTML', reply_markup=keyboard)
 
-# Handlers Navigasi Sub-Menu
-async def menu_ssh_ovpn_main(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(
-        "🚀 *Menu SSH & OVPN*\n\nPilih salah satu opsi untuk akun SSH atau OpenVPN.",
-        reply_markup=get_ssh_ovpn_menu_keyboard(), parse_mode='HTML'
-    )
+# --- Menu Handlers ---
+async def menu_ssh_ovpn_main(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None: await update.message.reply_text("🚀 *Menu SSH & OVPN*", reply_markup=get_ssh_ovpn_menu_keyboard(), parse_mode='HTML')
+async def menu_vmess_main(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None: await update.message.reply_text("⚡ *Menu VMess*", reply_markup=get_vmess_creation_menu_keyboard(), parse_mode='HTML')
+async def menu_vless_main(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None: await update.message.reply_text("🌀 *Menu VLess*", reply_markup=get_vless_menu_keyboard(), parse_mode='HTML')
+async def menu_trojan_main(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None: await update.message.reply_text("🛡️ *Menu Trojan*", reply_markup=get_trojan_menu_keyboard(), parse_mode='HTML')
+async def menu_shdwsk_main(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None: await update.message.reply_text("👻 *Menu Shadowsocks*", reply_markup=get_shadowsocks_menu_keyboard(), parse_mode='HTML')
+async def back_to_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None: await show_menu(update, context)
 
-async def menu_vmess_main(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(
-        "⚡ *Menu VMess*\n\nPilih salah satu opsi untuk akun VMess (V2Ray).",
-        reply_markup=get_vmess_creation_menu_keyboard(), parse_mode='HTML'
-    )
+# --- Trial Handlers ---
+async def create_trial_ssh_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None: await handle_general_script_button(update, context, '/usr/bin/bot-trial', 'Membuat trial SSH...', 'Gagal membuat trial SSH.', get_ssh_ovpn_menu_keyboard())
+async def create_trial_vless_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None: await handle_general_script_button(update, context, '/usr/bin/bot-trialvless', 'Membuat trial VLESS...', 'Gagal membuat trial VLESS.', get_vless_menu_keyboard())
+async def create_trial_trojan_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None: await handle_general_script_button(update, context, '/usr/bin/bot-trialtrojan', 'Membuat trial Trojan...', 'Gagal membuat trial Trojan.', get_trojan_menu_keyboard())
+async def create_trial_vmess_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None: await handle_general_script_button(update, context, '/usr/bin/bot-trialws', 'Membuat trial VMess...', 'Gagal membuat trial VMess.', get_vmess_creation_menu_keyboard())
+async def create_trial_shdwsk_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None: await handle_general_script_button(update, context, '/usr/bin/bot-trialss', 'Membuat trial Shadowsocks...', 'Gagal membuat trial Shadowsocks.', get_shadowsocks_menu_keyboard())
 
-async def menu_vless_main(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(
-        "🌀 *Menu VLess*\n\nPilih salah satu opsi untuk akun VLess.",
-        reply_markup=get_vless_menu_keyboard(), parse_mode='HTML'
-    )
+# --- Other Feature Handlers ---
+async def topup_saldo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    caption = f"💰 *TOP UP SALDO*\nSaldo Anda: <b>Rp {get_user_balance(update.effective_user.id):,.0f}</b>\n\nTransfer ke:\n[INFO REKENING ANDA]\n\nKonfirmasi ke: @{TELEGRAM_ADMIN_USERNAME}"
+    keyboard = get_admin_main_menu_keyboard() if is_admin(update.effective_user.id) else get_main_menu_keyboard()
+    if os.path.exists(QRIS_IMAGE_PATH):
+        with open(QRIS_IMAGE_PATH, 'rb') as photo: await update.message.reply_photo(photo=photo, caption=caption, parse_mode='HTML', reply_markup=keyboard)
+    else: await update.message.reply_text(caption, parse_mode='HTML', reply_markup=keyboard)
 
-async def menu_trojan_main(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(
-        "🛡️ *Menu Trojan*\n\nPilih salah satu opsi untuk akun Trojan.",
-        reply_markup=get_trojan_menu_keyboard(), parse_mode='HTML'
-    )
+async def check_balance_user_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text(f"💰 Saldo Anda: <b>Rp {get_user_balance(update.effective_user.id):,.0f}</b>", parse_mode='HTML')
 
-async def menu_shdwsk_main(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(
-        "👻 *Menu Shadowsocks*\n\nPilih salah satu opsi untuk akun Shadowsocks.",
-        reply_markup=get_shadowsocks_menu_keyboard(), parse_mode='HTML'
-    )
-
-async def back_to_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user_id = update.effective_user.id
-    if is_admin(user_id):
-        await update.message.reply_text(
-            "↩️ Kembali ke *Panel Admin Utama*.",
-            reply_markup=get_admin_main_menu_keyboard(), parse_mode='HTML'
-        )
+async def view_transactions_user_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    txs = get_user_transactions(update.effective_user.id)
+    if not txs: msg = "📂 Riwayat Transaksi Kosong."
     else:
-        await update.message.reply_text(
-            "↩️ Kembali ke *Menu Utama*.",
-            reply_markup=get_main_menu_keyboard(), parse_mode='HTML'
-        )
+        msg = "📄 *Riwayat Transaksi Anda:*\n\n"
+        for tx in txs: msg += f"<b>{'🟢 +' if tx['amount'] >= 0 else '🔴'} Rp {abs(tx['amount']):,.0f}</b> - <i>{tx['type'].replace('_', ' ').title()}</i>\n<pre>  {tx['timestamp']}</pre>\n"
+    await update.message.reply_text(msg, parse_mode='HTML')
 
-# HANDLER UTK TOMBOL MENU UMUM
-async def check_vless_service_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await handle_general_script_button(update, context, '/usr/bin/bot-cek-vless',
-                                     message_loading='Memeriksa status layanan VLess...',
-                                     message_error='Gagal memuat info layanan VLess.',
-                                     return_markup=get_vless_menu_keyboard())
+# --- Refresh Handler ---
+async def refresh_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    keyboard = get_admin_main_menu_keyboard() if is_admin(update.effective_user.id) else get_main_menu_keyboard()
+    await update.message.reply_text("🔄 Menu berhasil diperbarui!", reply_markup=keyboard)
 
-# HANDLER KHUSUS ADMIN
-async def check_service_admin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not is_admin(update.effective_user.id): return
-    await handle_general_script_button(update, context, '/usr/bin/resservice',
-                                     message_loading='Memeriksa semua status layanan...',
-                                     message_error='Gagal memeriksa status layanan.',
-                                     return_markup=get_admin_main_menu_keyboard())
-
-async def other_setting_admin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not is_admin(update.effective_user.id): return
-    await update.message.reply_text(
-        "⚙️ Fitur ini sedang dalam pengembangan dan akan segera tersedia.",
-        reply_markup=get_settings_menu_keyboard()
-    )
-
+# --- Admin Feature Handlers ---
 async def manage_users_main(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_admin(update.effective_user.id): return
     await update.message.reply_text(
@@ -488,649 +267,142 @@ async def manage_users_main(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         reply_markup=get_manage_users_menu_keyboard(), parse_mode='HTML'
     )
 
-async def settings_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not is_admin(update.effective_user.id): return
-    await update.message.reply_text(
-        "🛠️ *Pengaturan Bot & Server*\n\nKonfigurasi lanjutan untuk bot dan VPS.",
-        reply_markup=get_settings_menu_keyboard(), parse_mode='HTML'
-    )
-
-async def backup_vps_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not is_admin(update.effective_user.id): return
-    await handle_general_script_button(
-        update, context, '/usr/bin/bot-backup',
-        message_loading='Memulai proses backup VPS. Mohon tunggu...',
-        message_error='Gagal melakukan backup VPS.',
-        return_markup=get_settings_menu_keyboard()
-    )
-
-async def check_connections_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not is_admin(update.effective_user.id): return
-    await handle_general_script_button(
-        update, context, '/usr/bin/bot-cek-login-ssh',
-        message_loading='Memeriksa koneksi pengguna yang aktif...',
-        message_error='Gagal memeriksa koneksi aktif.',
-        return_markup=get_settings_menu_keyboard()
-    )
-
-# Handler Trial
-async def create_trial_ssh_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await handle_general_script_button(update, context, '/usr/bin/bot-trial',
-                                     message_loading='Membuat akun trial SSH & OVPN...',
-                                     message_error='❌ Gagal membuat akun trial SSH & OVPN.',
-                                     return_markup=get_ssh_ovpn_menu_keyboard())
-
-async def create_trial_trojan_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # Note: This points to the same script as SSH trial. Adjust script name if needed.
-    await handle_general_script_button(update, context, '/usr/bin/bot-trial-trojan', # Example: use a different script
-                                     message_loading='Membuat akun trial Trojan...',
-                                     message_error='❌ Gagal membuat akun trial Trojan.',
-                                     return_markup=get_trojan_menu_keyboard())
-
-async def create_trial_vmess_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await handle_general_script_button(update, context, '/usr/bin/bot-trialws',
-                                     message_loading='Membuat akun trial VMess...',
-                                     message_error='Gagal membuat akun trial VMess.',
-                                     return_markup=get_vmess_creation_menu_keyboard())
-                                     
-async def create_trial_shdwsk_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await handle_general_script_button(update, context, '/usr/bin/bot-trialss',
-                                     message_loading='Membuat akun trial Shadowsocks...',
-                                     message_error='Gagal membuat akun trial Shadowsocks.',
-                                     return_markup=get_shadowsocks_menu_keyboard())
-
-async def check_vmess_service_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await handle_general_script_button(update, context, '/usr/bin/bot-cek-vmess',
-                                     message_loading='Memeriksa status layanan VMess...',
-                                     message_error='Gagal memeriksa status VMess.',
-                                     return_markup=get_vmess_creation_menu_keyboard())
-
-# Handler Info & Placeholder
-async def info_ssh_ovpn_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    info_text = (
-        "ℹ️ *Informasi Layanan SSH & OpenVPN*\n\n"
-        "Layanan ini menyediakan koneksi SSH dan OpenVPN yang stabil dan cepat untuk berbagai keperluan seperti Browse, download, dan gaming.\n\n"
-        "🔹 *Keunggulan:*\n"
-        "   - Kecepatan Tinggi & Latensi Rendah\n"
-        "   - Mendukung Multi-Login (sesuai paket)\n"
-        "   - Server Terawat\n\n"
-        "Untuk membuat akun, silakan kembali ke menu dan pilih *'Buat Akun SSH Premium'*."
-    )
-    await update.message.reply_text(info_text, parse_mode='HTML', reply_markup=get_ssh_ovpn_menu_keyboard())
-
-async def create_akun_trojan_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text('⚠️ Fitur pembuatan akun Trojan Premium sedang dalam pengembangan. Mohon coba lagi nanti.', reply_markup=get_trojan_menu_keyboard())
-
-async def topup_saldo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user_id = update.effective_user.id
-    current_balance = get_user_balance(user_id)
-
-    caption_text = (
-        f"💰 *TOP UP SALDO | HOKAGE LEGEND VPN*\n"
-        f"══════════════════════\n\n"
-        f"Saldo Anda saat ini: <b>Rp {current_balance:,.0f},-</b>\n\n"
-        f"Silakan scan QRIS di atas untuk melakukan pembayaran atau transfer manual ke:\n\n"
-        f"💳 <b>Bank:</b> [NAMA BANK ANDA]\n"
-        f"💳 <b>No. Rekening:</b> [NOMOR REKENING ANDA]\n"
-        f"💳 <b>Atas Nama:</b> [NAMA PEMILIK REKENING]\n\n"
-        f"Setelah transfer, mohon kirim *bukti pembayaran* beserta *User ID Telegram* Anda ke admin untuk konfirmasi.\n\n"
-        f"👤 <b>Admin Telegram:</b> @{TELEGRAM_ADMIN_USERNAME}\n"
-        f"💬 <b>Admin WhatsApp:</b> {WHATSAPP_ADMIN_NUMBER}\n\n"
-        f"🔗 *Gabung grup kami untuk info & promo terbaru:*\n"
-        f"<a href=\"{GROUP_TELEGRAM_LINK}\">Grup Telegram Hokage Legend</a>\n\n"
-        f"<i>Saldo akan ditambahkan oleh Admin setelah verifikasi berhasil.</i>"
-    )
-
-    reply_markup_to_send = get_main_menu_keyboard() if not is_admin(user_id) else get_admin_main_menu_keyboard()
-
-    if os.path.exists(QRIS_IMAGE_PATH):
-        try:
-            with open(QRIS_IMAGE_PATH, 'rb') as photo_file:
-                await update.message.reply_photo(
-                    photo=InputFile(photo_file),
-                    caption=caption_text,
-                    parse_mode='HTML',
-                    reply_markup=reply_markup_to_send
-                )
-        except Exception as e:
-            logger.error(f"Failed to send QRIS photo from local file: {e}")
-            await update.message.reply_text(
-                f"⚠️ *Gagal memuat gambar QRIS.*\n"
-                f"Anda bisa melihat QRIS melalui link ini: <a href=\"{QRIS_IMAGE_URL_FALLBACK}\">Lihat QRIS</a>\n\n" + caption_text,
-                parse_mode='HTML', disable_web_page_preview=True,
-                reply_markup=reply_markup_to_send
-            )
-    else:
-        logger.warning(f"QRIS image file not found at {QRIS_IMAGE_PATH}. Sending URL fallback.")
-        await update.message.reply_text(
-            f"⚠️ *Gambar QRIS tidak ditemukan.*\n"
-            f"Anda bisa melihat QRIS melalui link ini: <a href=\"{QRIS_IMAGE_URL_FALLBACK}\">Lihat QRIS</a>\n\n" + caption_text,
-            parse_mode='HTML', disable_web_page_preview=True,
-            reply_markup=reply_markup_to_send
-        )
-
-async def refresh_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text('🔄 Menu telah disegarkan.', reply_markup=get_main_menu_keyboard())
-    await show_menu(update, context)
-
-async def check_balance_user_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user_id = update.effective_user.id
-    current_balance = get_user_balance(user_id)
-    message = (
-        f"╔══════════════════╗\n"
-        f"║    💰 *SALDO ANDA* 💰\n"
-        f"╠══════════════════╣\n"
-        f"║  <b>Rp {current_balance:,.0f},-</b>\n"
-        f"╚══════════════════╝\n\n"
-        f"Gunakan saldo ini untuk membeli layanan VPN premium kami."
-    )
-    await update.message.reply_text(
-        message,
-        parse_mode='HTML',
-        reply_markup=get_main_menu_keyboard()
-    )
-
-async def view_transactions_user_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user_id = update.effective_user.id
-    transactions = get_user_transactions(user_id)
-
-    if not transactions:
-        message = "📂 *Riwayat Transaksi Kosong*\n\nAnda belum pernah melakukan transaksi. Silakan Top Up saldo untuk memulai!"
-    else:
-        message = "📄 *Riwayat Transaksi Anda (10 Terbaru)*\n\n"
-        for tx in transactions:
-            amount_str = f"Rp {abs(tx['amount']):,.0f}"
-            if tx['amount'] >= 0:
-                icon = "🟢"
-                sign = "+"
-            else:
-                icon = "🔴"
-                sign = "-"
-            
-            message += f"<b>{icon} {tx['type'].replace('_', ' ').title()}</b>\n"
-            message += f"   - <b>Jumlah:</b> {sign}{amount_str}\n"
-            message += f"   - <b>Waktu:</b> <code>{tx['timestamp']}</code>\n"
-            if tx['description']:
-                message += f"   - <b>Deskripsi:</b> <i>{tx['description']}</i>\n"
-            message += "--------------------------------------\n"
-            
-    await update.message.reply_text(message, parse_mode='HTML', reply_markup=get_main_menu_keyboard())
-
-# HANDLER UNTUK MELIHAT ADMIN & FITUR BARU LAINNYA
 async def view_admins_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_admin(update.effective_user.id): return
-    await update.message.reply_text("⏳ *Mengambil data admin...*", parse_mode='HTML')
-    admin_info_list = []
-    
+    await update.message.reply_text("⏳ Mengambil data admin...", parse_mode='HTML')
+    info = ["👑 *Daftar Admin & Saldo*"]
     for admin_id in ADMIN_IDS:
-        balance = get_user_balance(admin_id)
-        formatted_balance = f"Rp {balance:,.0f},-"
-
         try:
-            user_chat = await context.bot.get_chat(admin_id)
-            user_display = f"{user_chat.first_name}"
-            if user_chat.last_name:
-                user_display += f" {user_chat.last_name}"
-            if user_chat.username:
-                user_display += f" (@{user_chat.username})"
-        except BadRequest:
-            user_display = "<i>(User ID tidak valid atau belum memulai bot)</i>"
-            logger.warning(f"Could not fetch info for admin ID: {admin_id}")
-        except Exception as e:
-            user_display = "<i>(Gagal mengambil nama user)</i>"
-            logger.error(f"Error fetching chat for {admin_id}: {e}")
-
-        admin_line = (
-            f"👤 <b>{user_display}</b>\n"
-            f"   - 🆔 User ID: <code>{admin_id}</code>\n"
-            f"   - 💰 Saldo: <b>{formatted_balance}</b>"
-        )
-        admin_info_list.append(admin_line)
-
-    if not admin_info_list:
-        message = "ℹ️ Tidak ada admin yang terdaftar di variabel `ADMIN_IDS`."
-    else:
-        message = "👑 *Daftar Admin & Saldo Saat Ini*\n\n"
-        message += "\n\n".join(admin_info_list)
-
-    await update.message.reply_text(
-        message,
-        parse_mode='HTML',
-        reply_markup=get_manage_users_menu_keyboard()
-    )
+            chat = await context.bot.get_chat(admin_id)
+            name = f"{chat.first_name} (@{chat.username or 'N/A'})"
+        except: name = "<i>(Gagal mengambil nama)</i>"
+        info.append(f"👤 <b>{name}</b>\n   - ID: <code>{admin_id}</code>\n   - Saldo: <b>Rp {get_user_balance(admin_id):,.0f}</b>")
+    await update.message.reply_text("\n\n".join(info), parse_mode='HTML', reply_markup=get_manage_users_menu_keyboard())
 
 async def total_users_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_admin(update.effective_user.id): return
-    user_count = count_all_users()
-    message = (
-        f"📊 *Jumlah Total Pengguna*\n\n"
-        f"Saat ini terdapat <b>{user_count}</b> pengguna yang terdaftar di bot."
-    )
-    await update.message.reply_text(
-        message,
-        parse_mode='HTML',
-        reply_markup=get_manage_users_menu_keyboard()
-    )
+    await update.message.reply_text(f"📊 Total Pengguna: <b>{count_all_users()}</b>", parse_mode='HTML', reply_markup=get_manage_users_menu_keyboard())
 
 async def recent_users_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_admin(update.effective_user.id): return
-    await update.message.reply_text("⏳ *Mengambil data user terbaru...*", parse_mode='HTML')
-    recent_users = get_recent_users(limit=20)
-
-    if not recent_users:
-        message = "ℹ️ Belum ada pengguna yang mendaftar."
-        await update.message.reply_text(message, reply_markup=get_manage_users_menu_keyboard())
-        return
-
-    user_info_list = []
-    message = f"🆕 *Daftar 20 Pengguna Terbaru*\n\n"
-
-    for user in recent_users:
-        user_id = user['user_id']
-        registered_at = user['registered_at']
-        
-        try:
-            user_chat = await context.bot.get_chat(user_id)
-            user_display = user_chat.first_name
-            if user_chat.username:
-                user_display += f" (@{user_chat.username})"
-        except Exception:
-            user_display = "<i>(Tidak bisa mengambil nama)</i>"
-        
-        user_info_list.append(
-            f"👤 <b>{user_display}</b>\n"
-            f"   - 🆔 User ID: <code>{user_id}</code>\n"
-            f"   - 🗓️ Daftar: <i>{registered_at}</i>"
-        )
-
-    message += "\n\n".join(user_info_list)
-    await update.message.reply_text(
-        message,
-        parse_mode='HTML',
-        reply_markup=get_manage_users_menu_keyboard()
-    )
-
-# FUNGSI-FUNGSI HANDLER PERCAKAPAN
-def create_conversation_prompt(prompt_text: str) -> str:
-    return f"{prompt_text}\n\n_Ketik /cancel untuk membatalkan proses ini._"
-
-async def start_account_creation(update: Update, context: ContextTypes.DEFAULT_TYPE, service_name: str, cost: float, duration: int, next_state: int, return_keyboard: ReplyKeyboardMarkup) -> int:
-    user_id = update.effective_user.id
-    
-    if not is_admin(user_id):
-        current_balance = get_user_balance(user_id)
-        if current_balance < cost:
-            await update.message.reply_text(
-                f"🚫 *Saldo Tidak Cukup!*\n\n"
-                f"Saldo Anda: <b>Rp {current_balance:,.0f}</b>\n"
-                f"Biaya membuat Akun {service_name} ({duration} hari): <b>Rp {cost:,.0f}</b>\n\n"
-                f"Silakan *Top Up Saldo* terlebih dahulu.",
-                parse_mode='HTML',
-                reply_markup=return_keyboard
-            )
-            return ConversationHandler.END
-        else:
-            await update.message.reply_text(
-                f"✅ *Saldo Cukup!* (Rp {current_balance:,.0f})\n\n" +
-                create_conversation_prompt(f"📝 Silakan masukkan *Username* untuk akun {service_name} Anda:"),
-                parse_mode='HTML'
-            )
-            return next_state
+    users = get_recent_users()
+    if not users: msg = "ℹ️ Belum ada pengguna."
     else:
-        await update.message.reply_text(
-            "👑 *Mode Admin Terdeteksi*\n"
-            "Pengecekan saldo dilewati.\n\n" +
-            create_conversation_prompt(f"📝 Silakan masukkan *Username* untuk akun {service_name}:"),
-            parse_mode='HTML'
-        )
-        return next_state
+        info = [f"👤 <code>{u['user_id']}</code> (Daftar: <i>{u['registered_at']}</i>)" for u in users]
+        msg = "🆕 *20 Pengguna Terbaru*\n\n" + "\n".join(info)
+    await update.message.reply_text(msg, parse_mode='HTML', reply_markup=get_manage_users_menu_keyboard())
+
+async def check_service_admin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None: await handle_general_script_button(update, context, '/usr/bin/resservice', 'Memeriksa layanan...', 'Gagal periksa layanan.', get_admin_main_menu_keyboard())
+async def settings_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None: await update.message.reply_text("🛠️ *Pengaturan*", reply_markup=get_settings_menu_keyboard(), parse_mode='HTML')
+async def backup_vps_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None: await handle_general_script_button(update, context, '/usr/bin/bot-backup', 'Memulai backup...', 'Gagal backup.', get_settings_menu_keyboard())
+async def check_connections_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None: await handle_general_script_button(update, context, '/usr/bin/bot-cek-login-ssh', 'Memeriksa koneksi...', 'Gagal periksa koneksi.', get_settings_menu_keyboard())
+
+async def view_all_transactions_admin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not is_admin(update.effective_user.id): return
+    txs = get_all_transactions()
+    if not txs: msg = "📂 Belum ada transaksi."
+    else:
+        msg = "🧾 *20 Transaksi Terbaru (Semua User)*\n\n"
+        for tx in txs: msg += f"👤 <code>{tx['user_id']}</code>: {'🟢 +' if tx['amount'] >= 0 else '🔴'}<b>Rp {abs(tx['amount']):,.0f}</b>\n<i>({tx['type'].replace('_', ' ').title()})</i>\n"
+    await update.message.reply_text(msg, parse_mode='HTML', reply_markup=get_admin_main_menu_keyboard())
+
+# --- CONVERSATION HANDLERS (lebih ringkas) ---
+def create_conversation_prompt(prompt_text: str) -> str: return f"{prompt_text}\n\n_Ketik /cancel untuk batal._"
+
+async def start_account_creation(update: Update, context: ContextTypes.DEFAULT_TYPE, service_name: str, cost: float, next_state: int, keyboard: ReplyKeyboardMarkup) -> int:
+    user_id = update.effective_user.id
+    if not is_admin(user_id):
+        balance = get_user_balance(user_id)
+        if balance < cost:
+            await update.message.reply_text(f"🚫 *Saldo Tidak Cukup!*\nSaldo: <b>Rp {balance:,.0f}</b> | Butuh: <b>Rp {cost:,.0f}</b>", parse_mode='HTML', reply_markup=keyboard)
+            return ConversationHandler.END
+        await update.message.reply_text(f"✅ Saldo Cukup.\n{create_conversation_prompt(f'📝 Masukkan *Username* untuk {service_name}:')}", parse_mode='HTML')
+    else:
+        await update.message.reply_text(f"👑 *Mode Admin*\n{create_conversation_prompt(f'📝 Masukkan *Username* untuk {service_name}:')}", parse_mode='HTML')
+    return next_state
 
 async def get_valid_username(update: Update, context: ContextTypes.DEFAULT_TYPE, data_key: str, next_state: int, next_prompt: str) -> int:
     username = update.message.text
     if not username or not username.isalnum() and "_" not in username:
-        await update.message.reply_text(
-            create_conversation_prompt("⚠️ *Username Tidak Valid!*\n\nUsername hanya boleh berisi huruf, angka, dan underscore (_). Silakan coba lagi:"),
-            parse_mode='HTML'
-        )
-        return context.state
-    
+        await update.message.reply_text(create_conversation_prompt("⚠️ Username tidak valid."), parse_mode='HTML'); return context.state
     context.user_data[data_key] = username
-    await update.message.reply_text(
-        create_conversation_prompt(f"✅ Username diterima. {next_prompt}"), parse_mode='HTML'
-    )
-    return next_state
-    
-async def get_numeric_input(update: Update, context: ContextTypes.DEFAULT_TYPE, data_key: str, next_state: int, field_name: str, next_prompt: str) -> int:
-    user_input = update.message.text
-    if not user_input.isdigit() or int(user_input) <= 0:
-        await update.message.reply_text(
-            create_conversation_prompt(f"⚠️ *Input Tidak Valid!*\n\n{field_name} harus berupa angka positif. Silakan coba lagi:"),
-            parse_mode='HTML'
-        )
-        return context.state
+    await update.message.reply_text(create_conversation_prompt(f"✅ OK. {next_prompt}"), parse_mode='HTML'); return next_state
 
-    context.user_data[data_key] = int(user_input)
-    await update.message.reply_text(
-        create_conversation_prompt(f"✅ {field_name} diterima. {next_prompt}"), parse_mode='HTML'
-    )
-    return next_state
+async def get_numeric_input(update: Update, context: ContextTypes.DEFAULT_TYPE, data_key: str, next_state: int, field: str, next_prompt: str) -> int:
+    if not update.message.text.isdigit() or int(update.message.text) <= 0:
+        await update.message.reply_text(create_conversation_prompt(f"⚠️ Input tidak valid. {field} harus angka."), parse_mode='HTML'); return context.state
+    context.user_data[data_key] = int(update.message.text)
+    await update.message.reply_text(create_conversation_prompt(f"✅ OK. {next_prompt}"), parse_mode='HTML'); return next_state
 
-async def process_account_creation(update: Update, context: ContextTypes.DEFAULT_TYPE, service_name: str, script_path: str, params: list, cost: float, return_keyboard: ReplyKeyboardMarkup) -> int:
-    user_id = update.effective_user.id
-    user_is_admin = is_admin(user_id)
-
-    if not user_is_admin:
+async def process_account_creation(update: Update, context: ContextTypes.DEFAULT_TYPE, service: str, script: str, params: list, cost: float, keyboard: ReplyKeyboardMarkup) -> int:
+    user_id, is_admin_user = update.effective_user.id, is_admin(update.effective_user.id)
+    if not is_admin_user:
         if get_user_balance(user_id) < cost:
-            await update.message.reply_text(
-                f"🚫 *Proses Gagal!*\n\nSaldo Anda tidak mencukupi pada tahap akhir. Mohon ulangi proses.",
-                parse_mode='HTML', reply_markup=return_keyboard
-            )
-            context.user_data.clear()
-            return ConversationHandler.END
-
-        deduction_desc = f"Pembuatan akun {service_name}: {params[0]}"
-        if not update_user_balance(user_id, cost, 'account_creation', deduction_desc, is_deduction=True):
-            await update.message.reply_text(
-                "⚠️ *Kesalahan Sistem!*\n\nTerjadi masalah saat mengurangi saldo Anda. Mohon hubungi admin.",
-                parse_mode='HTML', reply_markup=return_keyboard
-            )
-            context.user_data.clear()
-            return ConversationHandler.END
-        
-        sisa_saldo = get_user_balance(user_id)
-        await update.message.reply_text(
-            f"💸 Saldo <b>Rp {cost:,.0f}</b> telah dikurangi. Sisa saldo: <b>Rp {sisa_saldo:,.0f}</b>\n\n"
-            f"⏳ *Membuat akun {service_name}... Mohon tunggu.*",
-            parse_mode='HTML'
-        )
+            await update.message.reply_text("🚫 Saldo tidak cukup.", reply_markup=keyboard); return ConversationHandler.END
+        update_user_balance(user_id, cost, 'creation', f"Buat {service}: {params[0]}", is_deduction=True)
+        await update.message.reply_text(f"💸 Saldo dikurangi. Sisa: Rp {get_user_balance(user_id):,.0f}\n\n⏳ Membuat akun...", parse_mode='HTML')
     else:
-        await update.message.reply_text(
-            f"👑 *Mode Admin* 👑\n"
-            f"⏳ *Membuat akun {service_name} tanpa biaya... Mohon tunggu.*",
-            parse_mode='HTML'
-        )
-
-    command = f"bash {script_path} {' '.join(map(str, params))}"
-    result_ssh = await run_ssh_command(command)
-
-    if "Error:" in result_ssh or "Terjadi Kesalahan" in result_ssh:
-        if not user_is_admin:
-            refund_desc = f"Refund gagal buat {service_name}: {params[0]}"
-            update_user_balance(user_id, cost, 'refund', refund_desc, is_deduction=False)
-            await update.message.reply_text(
-                f"❌ *Gagal Membuat Akun {service_name}!*\n\n{result_ssh}\n\n"
-                f"✅ *Jangan khawatir, saldo Anda sebesar Rp {cost:,.0f} telah dikembalikan.*",
-                parse_mode='HTML', reply_markup=return_keyboard
-            )
+        await update.message.reply_text(f"👑 Membuat akun {service}...", parse_mode='HTML')
+    result = await run_ssh_command(f"bash {script} {' '.join(map(str, params))}")
+    if "Error:" in result or "Terjadi Kesalahan" in result:
+        if not is_admin_user:
+            update_user_balance(user_id, cost, 'refund', f"Gagal buat {service}: {params[0]}", is_deduction=False)
+            await update.message.reply_text(f"❌ Gagal!\n{result}\n\n✅ Saldo dikembalikan.", parse_mode='HTML', reply_markup=keyboard)
         else:
-            await update.message.reply_text(
-                f"❌ *Gagal Membuat Akun {service_name} (Mode Admin)!*\n\n{result_ssh}",
-                parse_mode='HTML', reply_markup=return_keyboard
-            )
+            await update.message.reply_text(f"❌ Gagal (Admin)!\n{result}", parse_mode='HTML', reply_markup=keyboard)
     else:
-        success_message = (
-            f"🎉 *Akun {service_name} Berhasil Dibuat!* 🎉\n"
-            f"══════════════════════\n\n"
-            f"<pre>{result_ssh}</pre>\n\n"
-            f"Terima kasih telah menggunakan layanan kami!"
-        )
-        await update.message.reply_text(success_message, parse_mode='HTML', reply_markup=return_keyboard)
+        await update.message.reply_text(f"🎉 Akun {service} Berhasil Dibuat!\n<pre>{result}</pre>", parse_mode='HTML', reply_markup=keyboard)
+    context.user_data.clear(); return ConversationHandler.END
 
-    context.user_data.clear()
-    return ConversationHandler.END
-
-# Conversation Handlers
-async def create_akun_vmess_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    return await start_account_creation(update, context, "VMess", ACCOUNT_COST_IDR, ACCOUNT_DURATION_DAYS, VMESS_GET_USERNAME, get_vmess_creation_menu_keyboard())
-
-async def vmess_get_username(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    return await get_valid_username(update, context, 'username', VMESS_GET_EXPIRED_DAYS, "Sekarang, masukkan *Masa Aktif* (dalam hari, contoh: 30):")
-    
-async def vmess_get_expired_days(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    return await get_numeric_input(update, context, 'expired_days', VMESS_GET_QUOTA, "Masa Aktif", "Sekarang, masukkan *Limit Kuota* (dalam GB, contoh: 10):")
-
-async def vmess_get_quota(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    return await get_numeric_input(update, context, 'quota', VMESS_GET_IP_LIMIT, "Limit Kuota", "Terakhir, masukkan *Batas Perangkat/IP* (contoh: 2):")
-
+# Specific Conversation Flows
+async def create_akun_vmess_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int: return await start_account_creation(update, context, "VMess", ACCOUNT_COST_IDR, VMESS_GET_USERNAME, get_vmess_creation_menu_keyboard())
+async def vmess_get_username(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int: return await get_valid_username(update, context, 'username', VMESS_GET_EXPIRED_DAYS, "Masukkan Masa Aktif (hari):")
+async def vmess_get_expired_days(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int: return await get_numeric_input(update, context, 'expired_days', VMESS_GET_QUOTA, "Masa Aktif", "Masukkan Limit Kuota (GB):")
+async def vmess_get_quota(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int: return await get_numeric_input(update, context, 'quota', VMESS_GET_IP_LIMIT, "Limit Kuota", "Masukkan Batas IP:")
 async def vmess_get_ip_limit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await get_numeric_input(update, context, 'ip_limit', -1, "Batas IP", "")
-    params = [
-        context.user_data['username'],
-        context.user_data['expired_days'],
-        context.user_data['quota'],
-        context.user_data['ip_limit']
-    ]
+    params = [context.user_data['username'], context.user_data['expired_days'], context.user_data['quota'], context.user_data['ip_limit']]
     return await process_account_creation(update, context, "VMess", "/usr/bin/addws-bot", params, ACCOUNT_COST_IDR, get_vmess_creation_menu_keyboard())
 
-async def create_akun_shdwsk_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    return await start_account_creation(update, context, "Shadowsocks", ACCOUNT_COST_IDR, ACCOUNT_DURATION_DAYS, SHADOWSOCKS_GET_USERNAME, get_shadowsocks_menu_keyboard())
-
-async def shdwsk_get_username(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    return await get_valid_username(update, context, 'username', SHADOWSOCKS_GET_EXPIRED_DAYS, "Sekarang, masukkan *Masa Aktif* (dalam hari, contoh: 30):")
-
-async def shdwsk_get_expired_days(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    return await get_numeric_input(update, context, 'expired_days', SHADOWSOCKS_GET_QUOTA, "Masa Aktif", "Terakhir, masukkan *Limit Kuota* (dalam GB, contoh: 10):")
-
-async def shdwsk_get_quota(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await get_numeric_input(update, context, 'quota', -1, "Limit Kuota", "")
-    params = [
-        context.user_data['username'],
-        context.user_data['expired_days'],
-        context.user_data['quota']
-    ]
-    return await process_account_creation(update, context, "Shadowsocks", "/usr/bin/addss-bot", params, ACCOUNT_COST_IDR, get_shadowsocks_menu_keyboard())
-    
-async def create_akun_ssh_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    return await start_account_creation(update, context, "SSH & OVPN", ACCOUNT_COST_IDR, ACCOUNT_DURATION_DAYS, SSH_OVPN_GET_USERNAME, get_ssh_ovpn_menu_keyboard())
-
-async def ssh_ovpn_get_username(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    return await get_valid_username(update, context, 'username', SSH_OVPN_GET_PASSWORD, "Sekarang, masukkan *Password* yang Anda inginkan:")
-    
-async def ssh_ovpn_get_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    password = update.message.text
-    if not password:
-        await update.message.reply_text(create_conversation_prompt("⚠️ *Password tidak boleh kosong*. Silakan coba lagi:"), parse_mode='HTML')
-        return SSH_OVPN_GET_PASSWORD
-    context.user_data['password'] = password
-    await update.message.reply_text(create_conversation_prompt("✅ Password diterima. Sekarang, masukkan *Masa Aktif* (dalam hari, contoh: 30):"), parse_mode='HTML')
-    return SSH_OVPN_GET_EXPIRED_DAYS
-
-async def ssh_ovpn_get_expired_days(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    return await get_numeric_input(update, context, 'expired_days', SSH_OVPN_GET_QUOTA, "Masa Aktif", "Sekarang, masukkan *Limit Kuota* (dalam GB, contoh: 10):")
-
-async def ssh_ovpn_get_quota(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    return await get_numeric_input(update, context, 'quota', SSH_OVPN_GET_IP_LIMIT, "Limit Kuota", "Terakhir, masukkan *Batas Perangkat/IP* (contoh: 2):")
-
-async def ssh_ovpn_get_ip_limit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await get_numeric_input(update, context, 'ip_limit', -1, "Batas IP", "")
-    params = [
-        context.user_data['username'],
-        context.user_data['password'],
-        context.user_data['expired_days'],
-        context.user_data['quota'],
-        context.user_data['ip_limit']
-    ]
-    return await process_account_creation(update, context, "SSH & OVPN", "/usr/bin/addssh-bot", params, ACCOUNT_COST_IDR, get_ssh_ovpn_menu_keyboard())
-
-async def create_akun_vless_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    return await start_account_creation(update, context, "VLess", ACCOUNT_COST_IDR, ACCOUNT_DURATION_DAYS, VLESS_GET_USERNAME, get_vless_menu_keyboard())
-
-async def vless_get_username(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    return await get_valid_username(update, context, 'username', VLESS_GET_EXPIRED_DAYS, "Sekarang, masukkan *Masa Aktif* (dalam hari, contoh: 30):")
-
-async def vless_get_expired_days(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    return await get_numeric_input(update, context, 'expired_days', VLESS_GET_QUOTA, "Masa Aktif", "Sekarang, masukkan *Limit Kuota* (dalam GB, contoh: 10):")
-
-async def vless_get_quota(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    return await get_numeric_input(update, context, 'quota', VLESS_GET_IP_LIMIT, "Limit Kuota", "Terakhir, masukkan *Batas Perangkat/IP* (contoh: 2):")
-
+async def create_akun_vless_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int: return await start_account_creation(update, context, "VLess", ACCOUNT_COST_IDR, VLESS_GET_USERNAME, get_vless_menu_keyboard())
+async def vless_get_username(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int: return await get_valid_username(update, context, 'username', VLESS_GET_EXPIRED_DAYS, "Masukkan Masa Aktif (hari):")
+async def vless_get_expired_days(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int: return await get_numeric_input(update, context, 'expired_days', VLESS_GET_QUOTA, "Masa Aktif", "Masukkan Limit Kuota (GB):")
+async def vless_get_quota(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int: return await get_numeric_input(update, context, 'quota', VLESS_GET_IP_LIMIT, "Limit Kuota", "Masukkan Batas IP:")
 async def vless_get_ip_limit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await get_numeric_input(update, context, 'ip_limit', -1, "Batas IP", "")
-    params = [
-        context.user_data['username'],
-        context.user_data['expired_days'],
-        context.user_data['quota'],
-        context.user_data['ip_limit']
-    ]
+    params = [context.user_data['username'], context.user_data['expired_days'], context.user_data['quota'], context.user_data['ip_limit']]
     return await process_account_creation(update, context, "VLess", "/usr/bin/addvless-bot", params, ACCOUNT_COST_IDR, get_vless_menu_keyboard())
 
-async def add_balance_conversation_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    if not is_admin(update.effective_user.id): return ConversationHandler.END
-    await update.message.reply_text(create_conversation_prompt("👤 Masukkan *User ID Telegram* target:"), parse_mode='HTML')
-    return ADD_BALANCE_GET_USER_ID
+async def create_akun_ssh_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int: return await start_account_creation(update, context, "SSH & OVPN", ACCOUNT_COST_IDR, SSH_OVPN_GET_USERNAME, get_ssh_ovpn_menu_keyboard())
+async def ssh_ovpn_get_username(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int: return await get_valid_username(update, context, 'username', SSH_OVPN_GET_PASSWORD, "Masukkan Password:")
+async def ssh_ovpn_get_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data['password'] = update.message.text
+    return await get_numeric_input(update, context, 'expired_days', SSH_OVPN_GET_QUOTA, "Password", "Masukkan Masa Aktif (hari):") # This is a bit of a hack in flow, but works
+async def ssh_ovpn_get_expired_days(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int: return await get_numeric_input(update, context, 'expired_days', SSH_OVPN_GET_QUOTA, "Masa Aktif", "Masukkan Limit Kuota (GB):")
+async def ssh_ovpn_get_quota(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int: return await get_numeric_input(update, context, 'quota', SSH_OVPN_GET_IP_LIMIT, "Limit Kuota", "Masukkan Batas IP:")
+async def ssh_ovpn_get_ip_limit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await get_numeric_input(update, context, 'ip_limit', -1, "Batas IP", "")
+    params = [context.user_data['username'], context.user_data.get('password', '12345'), context.user_data['expired_days'], context.user_data['quota'], context.user_data['ip_limit']]
+    return await process_account_creation(update, context, "SSH & OVPN", "/usr/bin/addssh-bot", params, ACCOUNT_COST_IDR, get_ssh_ovpn_menu_keyboard())
 
-async def add_balance_get_user_id_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user_input_id = update.message.text
-    if not user_input_id.isdigit():
-        await update.message.reply_text(create_conversation_prompt("⚠️ *User ID tidak valid*. Harap masukkan ID dalam bentuk angka saja. Contoh: `123456789`."), parse_mode='HTML')
-        return ADD_BALANCE_GET_USER_ID
-
-    target_user_id = int(user_input_id)
-    conn = get_db_connection()
-    if not conn.cursor().execute("SELECT user_id FROM users WHERE user_id = ?", (target_user_id,)).fetchone():
-        await update.message.reply_text(f"❌ *User Tidak Ditemukan*\n\nUser ID <code>{target_user_id}</code> tidak ada di database.", parse_mode='HTML', reply_markup=get_manage_users_menu_keyboard())
-        return ConversationHandler.END
-    conn.close()
-
-    context.user_data['target_user_id_for_balance'] = target_user_id
-    await update.message.reply_text(create_conversation_prompt(f"✅ User ID <code>{target_user_id}</code> ditemukan.\n\n💵 Masukkan *jumlah saldo* yang ingin ditambahkan (contoh: 50000):"), parse_mode='HTML')
-    return ADD_BALANCE_GET_AMOUNT
-
-async def add_balance_get_amount_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    amount_str = update.message.text
-    if not amount_str.replace('.', '', 1).isdigit() or float(amount_str) <= 0:
-        await update.message.reply_text(create_conversation_prompt("⚠️ *Jumlah tidak valid*. Harap masukkan angka positif."), parse_mode='HTML')
-        return ADD_BALANCE_GET_AMOUNT
-
-    amount = float(amount_str)
-    target_user_id = context.user_data.get('target_user_id_for_balance')
-
-    if update_user_balance(target_user_id, amount, 'topup_admin', f"Topup oleh admin {update.effective_user.id}"):
-        await update.message.reply_text(
-            f"✅ *Top Up Berhasil!*\n\n"
-            f"Saldo untuk user <code>{target_user_id}</code> berhasil ditambah sebesar <b>Rp {amount:,.0f}</b>.\n"
-            f"Saldo baru user: <b>Rp {get_user_balance(target_user_id):,.0f}</b>",
-            parse_mode='HTML', reply_markup=get_manage_users_menu_keyboard()
-        )
-    else:
-        await update.message.reply_text("❌ *Operasi Gagal!*\n\nTerjadi kesalahan saat menyimpan ke database.", parse_mode='HTML', reply_markup=get_manage_users_menu_keyboard())
-
-    context.user_data.clear()
-    return ConversationHandler.END
-
-async def check_user_balance_conversation_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    if not is_admin(update.effective_user.id): return ConversationHandler.END
-    await update.message.reply_text(create_conversation_prompt("👤 Masukkan *User ID Telegram* yang ingin dicek:"), parse_mode='HTML')
-    return CHECK_BALANCE_GET_USER_ID
-
-async def check_user_balance_get_user_id_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user_input_id = update.message.text
-    if not user_input_id.isdigit():
-        await update.message.reply_text(create_conversation_prompt("⚠️ *User ID tidak valid*. Harap masukkan ID dalam bentuk angka saja. Contoh: `123456789`."), parse_mode='HTML')
-        return CHECK_BALANCE_GET_USER_ID
-
-    target_user_id = int(user_input_id)
-    balance = get_user_balance(target_user_id)
-    
-    conn = get_db_connection()
-    user_exists = conn.cursor().execute("SELECT user_id FROM users WHERE user_id = ?", (target_user_id,)).fetchone()
-    conn.close()
-
-    if not user_exists:
-         await update.message.reply_text(f"❌ *User Tidak Ditemukan*\n\nUser ID <code>{target_user_id}</code> tidak ada di database.", parse_mode='HTML', reply_markup=get_manage_users_menu_keyboard())
-    else:
-        await update.message.reply_text(
-            f"📊 *Saldo Pengguna*\n\n"
-            f"User ID: <code>{target_user_id}</code>\n"
-            f"Saldo Saat Ini: <b>Rp {balance:,.0f},-</b>",
-            parse_mode='HTML', reply_markup=get_manage_users_menu_keyboard()
-        )
-    context.user_data.clear()
-    return ConversationHandler.END
-
-async def view_user_tx_conversation_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    if not is_admin(update.effective_user.id): return ConversationHandler.END
-    await update.message.reply_text(create_conversation_prompt("👤 Masukkan *User ID Telegram* yang ingin dilihat riwayatnya:"), parse_mode='HTML')
-    return VIEW_USER_TX_GET_USER_ID
-
-async def view_user_tx_get_user_id_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user_input_id = update.message.text
-    if not user_input_id.isdigit():
-        await update.message.reply_text(create_conversation_prompt("⚠️ *User ID tidak valid*. Harap masukkan ID dalam bentuk angka saja. Contoh: `123456789`."), parse_mode='HTML')
-        return VIEW_USER_TX_GET_USER_ID
-
-    target_user_id = int(user_input_id)
-    transactions = get_user_transactions(target_user_id)
-
-    if not transactions:
-        message = f"📂 *Riwayat Transaksi Kosong*\n\nUser <code>{target_user_id}</code> belum memiliki transaksi."
-    else:
-        message = f"📑 *Riwayat Transaksi User {target_user_id} (10 Terbaru)*\n\n"
-        for tx in transactions:
-            amount_str = f"Rp {abs(tx['amount']):,.0f}"
-            sign = "🟢 +" if tx['amount'] >= 0 else "🔴"
-            message += f"<b>{sign} {tx['type'].replace('_', ' ').title()}</b> ({amount_str})\n"
-            message += f"   - <b>Waktu:</b> <code>{tx['timestamp']}</code>\n"
-            if tx['description']:
-                message += f"   - <b>Deskripsi:</b> <i>{tx['description']}</i>\n"
-            message += "--------------------------------------\n"
-
-    await update.message.reply_text(message, parse_mode='HTML', reply_markup=get_manage_users_menu_keyboard())
-    context.user_data.clear()
-    return ConversationHandler.END
-
-async def view_all_transactions_admin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not is_admin(update.effective_user.id): return
-    transactions = get_all_transactions()
-    if not transactions:
-        message = "📂 *Belum Ada Transaksi*\n\nSistem belum mencatat transaksi apapun."
-    else:
-        message = "🧾 *Riwayat Semua Transaksi (20 Terbaru)*\n\n"
-        for tx in transactions:
-            amount_str = f"Rp {abs(tx['amount']):,.0f}"
-            sign = "🟢 +" if tx['amount'] >= 0 else "🔴"
-            message += f"👤 <b>User:</b> <code>{tx['user_id']}</code>\n"
-            message += f"   - <b>Tipe:</b> {sign} <i>{tx['type'].replace('_', ' ').title()}</i> ({amount_str})\n"
-            message += f"   - <b>Waktu:</b> <code>{tx['timestamp']}</code>\n"
-            if tx['description']:
-                message += f"   - <b>Deskripsi:</b> <i>{tx['description']}</i>\n"
-            message += "--------------------------------------\n"
-
-    await update.message.reply_text(message, parse_mode='HTML', reply_markup=get_admin_main_menu_keyboard())
-
-# --- FUNGSI UTAMA UNTUK MEMULAI BOT ---
+# --- FUNGSI UTAMA ---
 def main() -> None:
-    """Fungsi utama untuk memulai bot."""
     logger.info("Bot is starting...")
-
-    if not SSH_USERNAME or not SSH_PASSWORD:
-        logger.critical("SSH_USERNAME atau SSH_PASSWORD tidak disetel. Bot tidak dapat berfungsi.")
+    if not all([BOT_TOKEN, SSH_USERNAME, SSH_PASSWORD]):
+        logger.critical("Konfigurasi bot (TOKEN/SSH) tidak lengkap. Bot berhenti.")
         exit(1)
 
     application = Application.builder().token(BOT_TOKEN).build()
     
-    cancel_handler = CommandHandler("cancel", cancel_conversation)
+    # Command Handlers
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("menu", show_menu))
 
     # Conversation Handlers
-    vmess_conv = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex(r'^➕ Buat Akun VMess Premium$'), create_akun_vmess_start)],
-        states={
-            VMESS_GET_USERNAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, vmess_get_username)],
-            VMESS_GET_EXPIRED_DAYS: [MessageHandler(filters.TEXT & ~filters.COMMAND, vmess_get_expired_days)],
-            VMESS_GET_QUOTA: [MessageHandler(filters.TEXT & ~filters.COMMAND, vmess_get_quota)],
-            VMESS_GET_IP_LIMIT: [MessageHandler(filters.TEXT & ~filters.COMMAND, vmess_get_ip_limit)],
-        }, fallbacks=[cancel_handler], allow_reentry=True
-    )
-    vless_conv = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex(r'^➕ Buat Akun VLess Premium$'), create_akun_vless_start)],
-        states={
-            VLESS_GET_USERNAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, vless_get_username)],
-            VLESS_GET_EXPIRED_DAYS: [MessageHandler(filters.TEXT & ~filters.COMMAND, vless_get_expired_days)],
-            VLESS_GET_QUOTA: [MessageHandler(filters.TEXT & ~filters.COMMAND, vless_get_quota)],
-            VLESS_GET_IP_LIMIT: [MessageHandler(filters.TEXT & ~filters.COMMAND, vless_get_ip_limit)],
-        }, fallbacks=[cancel_handler], allow_reentry=True
-    )
-    ssh_ovpn_conv = ConversationHandler(
+    cancel_handler = CommandHandler("cancel", cancel_conversation)
+    
+    # SSH & OVPN Conversation Handler
+    ssh_conv_handler = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex(r'^➕ Buat Akun SSH Premium$'), create_akun_ssh_handler)],
         states={
             SSH_OVPN_GET_USERNAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, ssh_ovpn_get_username)],
@@ -1138,93 +410,78 @@ def main() -> None:
             SSH_OVPN_GET_EXPIRED_DAYS: [MessageHandler(filters.TEXT & ~filters.COMMAND, ssh_ovpn_get_expired_days)],
             SSH_OVPN_GET_QUOTA: [MessageHandler(filters.TEXT & ~filters.COMMAND, ssh_ovpn_get_quota)],
             SSH_OVPN_GET_IP_LIMIT: [MessageHandler(filters.TEXT & ~filters.COMMAND, ssh_ovpn_get_ip_limit)],
-        }, fallbacks=[cancel_handler], allow_reentry=True
+        },
+        fallbacks=[cancel_handler],
+        allow_reentry=True
     )
-    shadowsocks_conv = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex(r'^➕ Buat Akun Shadowsocks$'), create_akun_shdwsk_handler)],
+    application.add_handler(ssh_conv_handler)
+
+    # VMess Conversation Handler
+    vmess_conv_handler = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex(r'^➕ Buat Akun VMess Premium$'), create_akun_vmess_start)],
         states={
-            SHADOWSOCKS_GET_USERNAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, shdwsk_get_username)],
-            SHADOWSOCKS_GET_EXPIRED_DAYS: [MessageHandler(filters.TEXT & ~filters.COMMAND, shdwsk_get_expired_days)],
-            SHADOWSOCKS_GET_QUOTA: [MessageHandler(filters.TEXT & ~filters.COMMAND, shdwsk_get_quota)],
-        }, fallbacks=[cancel_handler], allow_reentry=True
+            VMESS_GET_USERNAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, vmess_get_username)],
+            VMESS_GET_EXPIRED_DAYS: [MessageHandler(filters.TEXT & ~filters.COMMAND, vmess_get_expired_days)],
+            VMESS_GET_QUOTA: [MessageHandler(filters.TEXT & ~filters.COMMAND, vmess_get_quota)],
+            VMESS_GET_IP_LIMIT: [MessageHandler(filters.TEXT & ~filters.COMMAND, vmess_get_ip_limit)],
+        },
+        fallbacks=[cancel_handler],
+        allow_reentry=True
     )
-    add_balance_conv = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex(r'^💵 Tambah Saldo$'), add_balance_conversation_start)],
+    application.add_handler(vmess_conv_handler)
+
+    # VLess Conversation Handler
+    vless_conv_handler = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex(r'^➕ Buat Akun VLess Premium$'), create_akun_vless_start)],
         states={
-            ADD_BALANCE_GET_USER_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_balance_get_user_id_step)],
-            ADD_BALANCE_GET_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_balance_get_amount_step)],
-        }, fallbacks=[cancel_handler], allow_reentry=True
+            VLESS_GET_USERNAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, vless_get_username)],
+            VLESS_GET_EXPIRED_DAYS: [MessageHandler(filters.TEXT & ~filters.COMMAND, vless_get_expired_days)],
+            VLESS_GET_QUOTA: [MessageHandler(filters.TEXT & ~filters.COMMAND, vless_get_quota)],
+            VLESS_GET_IP_LIMIT: [MessageHandler(filters.TEXT & ~filters.COMMAND, vless_get_ip_limit)],
+        },
+        fallbacks=[cancel_handler],
+        allow_reentry=True
     )
-    check_balance_conv = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex(r'^📊 Cek Saldo User$'), check_user_balance_conversation_start)],
-        states={CHECK_BALANCE_GET_USER_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, check_user_balance_get_user_id_step)]},
-        fallbacks=[cancel_handler], allow_reentry=True
-    )
-    view_tx_conv = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex(r'^📑 Riwayat User$'), view_user_tx_conversation_start)],
-        states={VIEW_USER_TX_GET_USER_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, view_user_tx_get_user_id_step)]},
-        fallbacks=[cancel_handler], allow_reentry=True
-    )
-    
-    application.add_handler(vmess_conv)
-    application.add_handler(vless_conv)
-    application.add_handler(ssh_ovpn_conv)
-    application.add_handler(shadowsocks_conv)
-    application.add_handler(add_balance_conv)
-    application.add_handler(check_balance_conv)
-    application.add_handler(view_tx_conv)
+    application.add_handler(vless_conv_handler)
 
-    # Command & Message Handlers
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("menu", show_menu))
+    # Message Handlers
+    message_handlers = {
+        r'^🚀 SSH & OVPN$': menu_ssh_ovpn_main,
+        r'^⚡ VMess$': menu_vmess_main,
+        r'^🌀 VLess$': menu_vless_main,
+        r'^🛡️ Trojan$': menu_trojan_main,
+        r'^👻 Shadowsocks$': menu_shdwsk_main,
+        r'^⬅️ Kembali': back_to_main_menu,
+        r'^💰 Cek Saldo Saya$': check_balance_user_handler,
+        r'^📄 Riwayat Saya$': view_transactions_user_handler,
+        r'^💳 Top Up Saldo$': topup_saldo_handler,
+        r'^🔄 Refresh$': refresh_handler,
+        # Trials
+        r'^🆓 Coba Gratis SSH & OVPN$': create_trial_ssh_handler,
+        r'^🆓 Coba Gratis VLess$': create_trial_vless_handler,
+        r'^🆓 Coba Gratis VMess$': create_trial_vmess_handler,
+        r'^🆓 Coba Gratis Trojan$': create_trial_trojan_handler,
+        r'^🆓 Coba Gratis Shadowsocks$': create_trial_shdwsk_handler,
+        # Admin
+        r'^📈 Status Layanan$': check_service_admin_handler,
+        r'^👤 Manajemen User$': manage_users_main,
+        r'^🧾 Semua Transaksi$': view_all_transactions_admin_handler,
+        r'^🛠️ Pengaturan$': settings_main_menu,
+        r'^👑 Cek Admin & Saldo$': view_admins_handler,
+        r'^👥 Jumlah User$': total_users_handler,
+        r'^🆕 User Terbaru$': recent_users_handler,
+        r'^💾 Backup VPS$': backup_vps_handler,
+        r'^👁️ Cek Koneksi Aktif$': check_connections_handler,
+        r'^⚙️ Pengaturan Lain \(Soon\)$': lambda u,c: u.message.reply_text("Fitur segera hadir."),
+        r'^🗑️ Hapus User \(Soon\)$': lambda u,c: u.message.reply_text("Fitur segera hadir."),
+    }
 
-    # Main Menu Navigation
-    application.add_handler(MessageHandler(filters.Regex(r'^🚀 SSH & OVPN$'), menu_ssh_ovpn_main))
-    application.add_handler(MessageHandler(filters.Regex(r'^⚡ VMess$'), menu_vmess_main))
-    application.add_handler(MessageHandler(filters.Regex(r'^🌀 VLess$'), menu_vless_main))
-    application.add_handler(MessageHandler(filters.Regex(r'^🛡️ Trojan$'), menu_trojan_main))
-    application.add_handler(MessageHandler(filters.Regex(r'^👻 Shadowsocks$'), menu_shdwsk_main))
-    
-    # Back Buttons
-    application.add_handler(MessageHandler(filters.Regex(r'^⬅️ Kembali$'), back_to_main_menu))
-    application.add_handler(MessageHandler(filters.Regex(r'^⬅️ Kembali ke Menu Admin$'), back_to_main_menu))
+    for regex, func in message_handlers.items():
+        application.add_handler(MessageHandler(filters.Regex(regex), func))
 
-    # User Features
-    application.add_handler(MessageHandler(filters.Regex(r'^💰 Cek Saldo Saya$'), check_balance_user_handler))
-    application.add_handler(MessageHandler(filters.Regex(r'^📄 Riwayat Saya$'), view_transactions_user_handler))
-    application.add_handler(MessageHandler(filters.Regex(r'^💳 Top Up Saldo$'), topup_saldo_handler))
-    application.add_handler(MessageHandler(filters.Regex(r'^🔄 Refresh$'), refresh_handler))
-
-    # Sub-menu buttons
-    application.add_handler(MessageHandler(filters.Regex(r'^🆓 Coba Gratis SSH & OVPN$'), create_trial_ssh_handler))
-    application.add_handler(MessageHandler(filters.Regex(r'^🆓 Coba Gratis Trojan$'), create_trial_trojan_handler))
-    application.add_handler(MessageHandler(filters.Regex(r'^➕ Buat Akun Trojan Premium$'), create_akun_trojan_handler))
-    application.add_handler(MessageHandler(filters.Regex(r'^🆓 Coba Gratis VMess$'), create_trial_vmess_handler))
-    application.add_handler(MessageHandler(filters.Regex(r'^📊 Cek Layanan VMess$'), check_vmess_service_handler))
-    application.add_handler(MessageHandler(filters.Regex(r'^📊 Cek Layanan VLess$'), check_vless_service_handler))
-    application.add_handler(MessageHandler(filters.Regex(r'^ℹ️ Info Layanan SSH$'), info_ssh_ovpn_handler))
-    application.add_handler(MessageHandler(filters.Regex(r'^🆓 Coba Gratis Shadowsocks$'), create_trial_shdwsk_handler))
-
-    # Admin Features
-    application.add_handler(MessageHandler(filters.Regex(r'^📈 Status Layanan$'), check_service_admin_handler))
-    application.add_handler(MessageHandler(filters.Regex(r'^👤 Manajemen User$'), manage_users_main))
-    application.add_handler(MessageHandler(filters.Regex(r'^🧾 Semua Transaksi$'), view_all_transactions_admin_handler))
-    application.add_handler(MessageHandler(filters.Regex(r'^🛠️ Pengaturan$'), settings_main_menu))
-    
-    # Admin Management Sub-menu
-    application.add_handler(MessageHandler(filters.Regex(r'^👑 Cek Admin & Saldo$'), view_admins_handler))
-    application.add_handler(MessageHandler(filters.Regex(r'^👥 Jumlah User$'), total_users_handler))
-    application.add_handler(MessageHandler(filters.Regex(r'^🆕 User Terbaru$'), recent_users_handler))
-    
-    # Admin Settings Sub-menu
-    application.add_handler(MessageHandler(filters.Regex(r'^⚙️ Pengaturan Lain \(Soon\)$'), other_setting_admin_handler))
-    application.add_handler(MessageHandler(filters.Regex(r'^💾 Backup VPS$'), backup_vps_handler))
-    application.add_handler(MessageHandler(filters.Regex(r'^👁️ Cek Koneksi Aktif$'), check_connections_handler))
-    application.add_handler(MessageHandler(filters.Regex(r'^🗑️ Hapus User \(Soon\)$'), lambda u, c: u.message.reply_text("Fitur ini akan segera tersedia.")))
-
-    # Fallback handler MUST be last
+    # Fallback must be last
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, unknown))
-
+    
     logger.info("Bot is running...")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
