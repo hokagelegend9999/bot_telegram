@@ -1,6 +1,8 @@
 # bot_telegram
-
-
+Jika Xray Terjadi Error (config json-file tempt -file service )
+- sudo systemctl daemon-reload
+- sudo systemctl restart xray
+- sudo systemctl status xray
 
 ## INSTALL SCRIPT 
 
