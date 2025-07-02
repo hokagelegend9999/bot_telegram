@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # =================================================================================
-# Uninstaller Otomatis untuk Jualan Bot Telegram
-# Skrip ini akan menghapus semua komponen yang diinstal oleh installer.sh
+# Uninstaller Otomatis untuk Jualan Bot Telegram (Final)
+# TIDAK akan menghapus Nginx.
 # =================================================================================
 
 # --- Warna untuk Output ---
@@ -10,16 +10,16 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
 CYAN='\033[0;36m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
-# --- Fungsi untuk Mencetak Pesan ---
+# --- Fungsi ---
 info() { echo -e "${CYAN}[INFO]${NC} $1"; }
 success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
 warning() { echo -e "${RED}[WARNING]${NC} $1"; }
 
-# --- Cek jika dijalankan sebagai root ---
+# --- Cek Root ---
 if [ "$(id -u)" -ne 0 ]; then
-   echo "Skrip ini harus dijalankan sebagai root. Coba jalankan dengan 'sudo ./uninstaller.sh'"
+   echo "Skrip ini harus dijalankan sebagai root."
    exit 1
 fi
 
@@ -29,14 +29,10 @@ echo -e "${YELLOW}=====================================================${NC}"
 warning "         PENGHAPUSAN JUALAN BOT TELEGRAM"
 echo -e "${YELLOW}=====================================================${NC}"
 echo ""
-warning "Skrip ini akan MENGHAPUS secara permanen:"
-echo "  - Layanan systemd (jualan_bot.service)"
-echo "  - Skrip Python (jualan.py)"
-echo "  - Semua skrip bash terkait (addssh-bot, bot-trial, dll.)"
-echo "  - Database bot (jualan.db)"
-echo "  - Lingkungan virtual Python (jualanbot_env)"
+warning "Skrip ini akan MENGHAPUS secara permanen komponen bot."
+info "Paket Nginx TIDAK akan dihapus."
 echo ""
-read -p "Apakah Anda benar-benar yakin ingin melanjutkan? (ketik 'y' untuk lanjut): " CONFIRMATION
+read -p "Anda yakin ingin melanjutkan? (ketik 'y' untuk lanjut): " CONFIRMATION
 if [ "$CONFIRMATION" != "y" ]; then
     info "Penghapusan dibatalkan."
     exit 0
@@ -44,81 +40,39 @@ fi
 
 # --- Mulai Proses Penghapusan ---
 
-# 1. Menghentikan dan menonaktifkan layanan systemd
-info "Menghentikan dan menonaktifkan layanan jualan_bot.service..."
+info "1. Menghentikan dan menghapus layanan systemd..."
 systemctl stop jualan_bot.service > /dev/null 2>&1
 systemctl disable jualan_bot.service > /dev/null 2>&1
-success "Layanan berhasil dihentikan dan dinonaktifkan."
-
-# 2. Menghapus file-file
-info "Menghapus file-file bot dan layanan..."
 rm -f /etc/systemd/system/jualan_bot.service
 systemctl daemon-reload
+success "Layanan bot berhasil dihentikan dan dihapus."
 
-# Daftar file yang akan dihapus
+info "2. Menghapus file-file bot..."
 FILES_TO_REMOVE=(
-    "/usr/bin/jualan.py"
-    "/usr/bin/jualan.db"
-    "/usr/bin/addss-bot"
-    "/usr/bin/addssh-bot"
-    "/usr/bin/addvless-bot"
-    "/usr/bin/addws-bot"
-    "/usr/bin/bot-backup"
-    "/usr/bin/bot-cek-login-ssh"
-    "/usr/bin/bot-trial"
-    "/usr/bin/bot-trialtrojan"
-    "/usr/bin/bot-trialvless"
-    "/usr/bin/bot-trialws"
-    "/usr/bin/bot-trialss"
-    "/usr/bin/bot-vps-info"
-    "/usr/bin/resservice"
-    "/usr/bin/bot-cek-vless"
-    "/usr/bin/bot-cek-vmess"
+    "/usr/bin/jualan.py" "/usr/bin/jualan.db"
+    "/usr/bin/addss-bot" "/usr/bin/addssh-bot" "/usr/bin/addvless-bot" "/usr/bin/addws-bot"
+    "/usr/bin/bot-backup" "/usr/bin/bot-cek-login-ssh" "/usr/bin/bot-trial" "/usr/bin/bot-trialtrojan"
+    "/usr/bin/bot-trialvless" "/usr/bin/bot-trialws" "/usr/bin/bot-trialss" "/usr/bin/bot-vps-info"
+    "/usr/bin/resservice" "/usr/bin/bot-cek-vless" "/usr/bin/bot-cek-vmess"
 )
-
 for file in "${FILES_TO_REMOVE[@]}"; do
-    if [ -f "$file" ]; then
-        rm -f "$file"
-        echo "  - File ${file} dihapus."
-    fi
+    if [ -f "$file" ]; then rm -f "$file"; fi
 done
 
-# Menghapus direktori virtual environment
 if [ -d "/usr/bin/jualanbot_env" ]; then
     rm -rf "/usr/bin/jualanbot_env"
-    echo "  - Direktori /usr/bin/jualanbot_env dihapus."
 fi
-success "Semua file bot berhasil dihapus."
+success "Semua file bot dan lingkungan virtual berhasil dihapus."
 
-# 3. Menghapus paket (opsional)
-info "Opsi untuk menghapus paket."
-read -p "Apakah Anda ingin menghapus Nginx? (Ketik 'y' jika ya. PERINGATAN: Ini akan mempengaruhi website lain jika ada): " UNINSTALL_NGINX
-if [ "$UNINSTALL_NGINX" == "y" ]; then
-    info "Menghapus Nginx..."
-    apt-get purge --auto-remove nginx nginx-common -y > /dev/null 2>&1
-    success "Nginx berhasil dihapus."
-else
-    info "Nginx tidak dihapus."
-fi
-
-read -p "Apakah Anda ingin menghapus layanan 'at' (penjadwal tugas)? (Ketik 'y' jika ya): " UNINSTALL_AT
-if [ "$UNINSTALL_AT" == "y" ]; then
-    info "Menghapus 'at'..."
+info "3. Opsi untuk menghapus paket 'at'..."
+read -p "Apakah Anda ingin menghapus layanan 'at' (penjadwal tugas)? (y/n): " REMOVE_AT
+if [ "$REMOVE_AT" == "y" ]; then
     apt-get purge --auto-remove at -y > /dev/null 2>&1
     success "'at' berhasil dihapus."
 else
     info "'at' tidak dihapus."
 fi
 
-# 4. Informasi Pasca-Penghapusan
 echo ""
-info "--- Catatan Pasca-Penghapusan ---"
-warning "Konfigurasi SSH di '/etc/ssh/sshd_config' TIDAK diubah kembali secara otomatis demi keamanan."
-info "Jika Anda ingin menonaktifkan kembali login root dengan password, silakan edit file tersebut secara manual."
-if [ -f "/root/.ssh/authorized_keys.bak" ]; then
-    info "Installer sebelumnya membuat backup kunci SSH Anda di '/root/.ssh/authorized_keys.bak'."
-    info "Anda bisa mengembalikannya jika perlu dengan perintah: mv /root/.ssh/authorized_keys.bak /root/.ssh/authorized_keys"
-fi
-echo ""
-
 success "Proses penghapusan Jualan Bot telah selesai."
+info "Nginx dan konfigurasi SSH Anda tidak diubah."
