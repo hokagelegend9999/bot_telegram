@@ -2,7 +2,7 @@
 
 # =================================================================================
 # Uninstaller Otomatis untuk Jualan Bot Telegram (Final)
-# TIDAK akan menghapus Nginx.
+# Developer By : Hokage Legend.
 # =================================================================================
 
 # --- Warna untuk Output ---
@@ -75,4 +75,4 @@ fi
 
 echo ""
 success "Proses penghapusan Jualan Bot telah selesai."
-info "Nginx dan konfigurasi SSH Anda tidak diubah."
+info "ok..cuyy...sudah terhapus."
