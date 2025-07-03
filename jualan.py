@@ -42,8 +42,8 @@ GET_RESTORE_LINK = range(21, 22)
 GET_SSH_USER_TO_DELETE = range(22, 23)
 GET_TROJAN_USER_TO_DELETE = range(23, 24)
 GET_VLESS_USER_TO_DELETE = range(24, 25)
-GET_VMESS_USER_TO_DELETE = range(25, 26) # State baru
-GET_SHADOWSOCKS_USER_TO_DELETE = range(26, 27) # State baru
+GET_VMESS_USER_TO_DELETE = range(25, 26)
+GET_SHADOWSOCKS_USER_TO_DELETE = range(26, 27)
 
 # --- FUNGSI DATABASE ---
 def get_db_connection(): conn = sqlite3.connect(DB_FILE); conn.row_factory = sqlite3.Row; return conn
@@ -81,8 +81,8 @@ def get_settings_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('�
 def get_ssh_ovpn_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('➕ Buat Akun SSH Premium'), KeyboardButton('🗑️ Hapus Akun SSH')], [KeyboardButton('🆓 Coba Gratis SSH & OVPN')], [KeyboardButton('ℹ️ Info Layanan SSH')], [KeyboardButton('⬅️ Kembali')]], resize_keyboard=True)
 def get_vmess_creation_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('➕ Buat Akun VMess Premium'), KeyboardButton('🗑️ Hapus Akun VMess')], [KeyboardButton('🆓 Coba Gratis VMess')], [KeyboardButton('📊 Cek Layanan VMess')], [KeyboardButton('⬅️ Kembali')]], resize_keyboard=True)
 def get_vless_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('➕ Buat Akun VLess Premium'), KeyboardButton('🗑️ Hapus Akun VLess')], [KeyboardButton('🆓 Coba Gratis VLess')], [KeyboardButton('📊 Cek Layanan VLess')], [KeyboardButton('⬅️ Kembali')]], resize_keyboard=True)
-def get_trojan_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('➕ Buat Akun Trojan Premium'), KeyboardButton('🗑️ Hapus Akun Trojan')], [KeyboardButton('🆓 Coba Gratis Trojan')], [KeyboardButton('⬅️ Kembali')]], resize_keyboard=True)
-def get_shadowsocks_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('➕ Buat Akun Shadowsocks'), KeyboardButton('🗑️ Hapus Akun Shadowsocks')], [KeyboardButton('🆓 Coba Gratis Shadowsocks')], [KeyboardButton('⬅️ Kembali')]], resize_keyboard=True)
+def get_trojan_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('➕ Buat Akun Trojan Premium'), KeyboardButton('🗑️ Hapus Akun Trojan')], [KeyboardButton('🆓 Coba Gratis Trojan')], [KeyboardButton('📊 Cek Layanan Trojan')], [KeyboardButton('⬅️ Kembali')]], resize_keyboard=True)
+def get_shadowsocks_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('➕ Buat Akun Shadowsocks'), KeyboardButton('🗑️ Hapus Akun Shadowsocks')], [KeyboardButton('🆓 Coba Gratis Shadowsocks')], [KeyboardButton('📊 Cek Layanan Shadowsocks')], [KeyboardButton('⬅️ Kembali')]], resize_keyboard=True)
 
 async def run_ssh_command(command: str):
     client = paramiko.SSHClient()
@@ -99,7 +99,10 @@ async def run_ssh_command(command: str):
         return output or "✅ Perintah berhasil dieksekusi."
     except Exception as e:
         logger.critical(f"SSH Exception: {e}")
-        return f"💥 <b>Koneksi SSH Gagal!</b> Hubungi admin.\n<pre>{e}</pre>"async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        return f"💥 <b>Koneksi SSH Gagal!</b> Hubungi admin.\n<pre>{e}</pre>"
+    finally:
+        if client: client.close()
+            async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id, user_name = update.effective_user.id, update.effective_user.first_name
     conn = get_db_connection()
     if not conn.cursor().execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,)).fetchone():
@@ -182,7 +185,6 @@ async def recent_users_handler(u,c):
     users = get_recent_users()
     msg = "🆕 *20 Pengguna Terbaru*\n\n" + "\n".join([f"👤 <code>{u['user_id']}</code> (Daftar: <i>{u['registered_at']}</i>)" for u in users]) if users else "ℹ️ Belum ada pengguna."
     await u.message.reply_text(msg, parse_mode='HTML', reply_markup=get_manage_users_menu_keyboard())
-async def check_service_admin_handler(u,c): await handle_general_script_button(u,c,'/usr/bin/resservice','Memeriksa layanan...','Gagal periksa layanan.',get_admin_main_menu_keyboard())
 async def settings_main_menu(u,c): await u.message.reply_text("🛠️ *Pengaturan*", reply_markup=get_settings_menu_keyboard(), parse_mode='HTML')
 async def backup_vps_handler(u,c): await handle_general_script_button(u,c,'/usr/bin/bot-backup','Memulai backup...','Gagal backup.',get_settings_menu_keyboard())
 async def check_connections_handler(u,c): await handle_general_script_button(u,c,'/usr/bin/bot-cek-login-ssh','Memeriksa koneksi...','Gagal periksa koneksi.',get_settings_menu_keyboard())
@@ -190,6 +192,9 @@ async def restart_services_handler(u,c): await handle_general_script_button(u,c,
 async def clear_cache_handler(u,c): await handle_general_script_button(u,c,'/usr/bin/bot-clearcache','Membersihkan RAM Cache...','Gagal membersihkan cache.',get_settings_menu_keyboard())
 async def check_vmess_service_handler(u,c): await handle_general_script_button(u,c,'/usr/bin/bot-cek-ws', 'Memeriksa Pengguna Login...', 'Gagal memeriksa pengguna.', get_vmess_creation_menu_keyboard())
 async def check_vless_service_handler(u,c): await handle_general_script_button(u,c,'/usr/bin/bot-cek-vless', 'Memeriksa Pengguna Login...', 'Gagal memeriksa pengguna.', get_vless_menu_keyboard())
+async def check_trojan_service_handler(u,c): await handle_general_script_button(u,c,'/usr/bin/bot-cek-tr', 'Memeriksa Pengguna Login...', 'Gagal memeriksa pengguna.', get_trojan_menu_keyboard())
+async def check_shadowsocks_service_handler(u,c): await handle_general_script_button(u,c,'/usr/bin/bot-cek-ss', 'Memeriksa Pengguna Login...', 'Gagal memeriksa pengguna.', get_shadowsocks_menu_keyboard())
+async def check_service_admin_handler(u,c): await handle_general_script_button(u,c, '/usr/bin/resservice', 'Memeriksa status layanan...', 'Gagal memeriksa status.', get_admin_main_menu_keyboard())
 async def view_all_transactions_admin_handler(u,c):
     if not is_admin(u.effective_user.id): return
     txs = get_all_transactions()
@@ -285,7 +290,7 @@ async def delete_ssh_start(u,c):
     if not is_admin(u.effective_user.id): return ConversationHandler.END
     await u.message.reply_text("⏳ Mengambil daftar pengguna SSH...", parse_mode='HTML')
     user_list = await run_ssh_command("bash /usr/bin/bot-list-ssh")
-    await u.message.reply_text(f"<pre>{user_list}</pre>\n\n" + create_conversation_prompt("👆 Ketik *Username* dari daftar di atas yang ingin Anda hapus:"), parse_mode='HTML')
+    await u.message.reply_text(f"<pre>{user_list}</pre>\n\n" + create_conversation_prompt("👆 Ketik *Username* yang ingin dihapus:"), parse_mode='HTML')
     return GET_SSH_USER_TO_DELETE
 async def delete_ssh_get_user(u,c):
     username = u.message.text.strip()
@@ -298,7 +303,7 @@ async def delete_trojan_start(u,c):
     if not is_admin(u.effective_user.id): return ConversationHandler.END
     await u.message.reply_text("⏳ Mengambil daftar pengguna Trojan...", parse_mode='HTML')
     user_list = await run_ssh_command("bash /usr/bin/bot-list-trojan")
-    await u.message.reply_text(f"<pre>{user_list}</pre>\n\n" + create_conversation_prompt("👆 Ketik *Username* dari daftar di atas yang ingin Anda hapus:"), parse_mode='HTML')
+    await u.message.reply_text(f"<pre>{user_list}</pre>\n\n" + create_conversation_prompt("👆 Ketik *Username* yang ingin dihapus:"), parse_mode='HTML')
     return GET_TROJAN_USER_TO_DELETE
 async def delete_trojan_get_user(u,c):
     username = u.message.text.strip()
@@ -311,7 +316,7 @@ async def delete_vless_start(u,c):
     if not is_admin(u.effective_user.id): return ConversationHandler.END
     await u.message.reply_text("⏳ Mengambil daftar pengguna VLess...", parse_mode='HTML')
     user_list = await run_ssh_command("bash /usr/bin/bot-list-vless")
-    await u.message.reply_text(f"<pre>{user_list}</pre>\n\n" + create_conversation_prompt("👆 Ketik *Username* dari daftar di atas yang ingin Anda hapus:"), parse_mode='HTML')
+    await u.message.reply_text(f"<pre>{user_list}</pre>\n\n" + create_conversation_prompt("👆 Ketik *Username* yang ingin dihapus:"), parse_mode='HTML')
     return GET_VLESS_USER_TO_DELETE
 async def delete_vless_get_user(u,c):
     username = u.message.text.strip()
@@ -324,7 +329,7 @@ async def delete_vmess_start(u,c):
     if not is_admin(u.effective_user.id): return ConversationHandler.END
     await u.message.reply_text("⏳ Mengambil daftar pengguna VMess...", parse_mode='HTML')
     user_list = await run_ssh_command("bash /usr/bin/bot-list-vmess")
-    await u.message.reply_text(f"<pre>{user_list}</pre>\n\n" + create_conversation_prompt("👆 Ketik *Username* dari daftar di atas yang ingin Anda hapus:"), parse_mode='HTML')
+    await u.message.reply_text(f"<pre>{user_list}</pre>\n\n" + create_conversation_prompt("👆 Ketik *Username* yang ingin dihapus:"), parse_mode='HTML')
     return GET_VMESS_USER_TO_DELETE
 async def delete_vmess_get_user(u,c):
     username = u.message.text.strip()
@@ -332,6 +337,19 @@ async def delete_vmess_get_user(u,c):
     await u.message.reply_text(f"⏳ Menghapus pengguna '{username}'...", parse_mode='HTML')
     result = await run_ssh_command(f"bash /usr/bin/bot-del-vmess '{username}'")
     await u.message.reply_text(result, reply_markup=get_vmess_creation_menu_keyboard())
+    return ConversationHandler.END
+async def delete_shadowsocks_start(u,c):
+    if not is_admin(u.effective_user.id): return ConversationHandler.END
+    await u.message.reply_text("⏳ Mengambil daftar pengguna Shadowsocks...", parse_mode='HTML')
+    user_list = await run_ssh_command("bash /usr/bin/bot-list-shadowsocks")
+    await u.message.reply_text(f"<pre>{user_list}</pre>\n\n" + create_conversation_prompt("👆 Ketik *Username* yang ingin dihapus:"), parse_mode='HTML')
+    return GET_SHADOWSOCKS_USER_TO_DELETE
+async def delete_shadowsocks_get_user(u,c):
+    username = u.message.text.strip()
+    if not username: await u.message.reply_text("Username tidak boleh kosong. /cancel untuk batal."); return GET_SHADOWSOCKS_USER_TO_DELETE
+    await u.message.reply_text(f"⏳ Menghapus pengguna '{username}'...", parse_mode='HTML')
+    result = await run_ssh_command(f"bash /usr/bin/bot-del-ss '{username}'")
+    await u.message.reply_text(result, reply_markup=get_shadowsocks_menu_keyboard())
     return ConversationHandler.END
 
 def main() -> None:
@@ -354,6 +372,7 @@ def main() -> None:
         ConversationHandler(entry_points=[MessageHandler(filters.Regex(r'^🗑️ Hapus Akun Trojan$'), delete_trojan_start)], states={GET_TROJAN_USER_TO_DELETE: [MessageHandler(filters.TEXT & ~filters.COMMAND, delete_trojan_get_user)]}, fallbacks=[cancel_handler]),
         ConversationHandler(entry_points=[MessageHandler(filters.Regex(r'^🗑️ Hapus Akun VLess$'), delete_vless_start)], states={GET_VLESS_USER_TO_DELETE: [MessageHandler(filters.TEXT & ~filters.COMMAND, delete_vless_get_user)]}, fallbacks=[cancel_handler]),
         ConversationHandler(entry_points=[MessageHandler(filters.Regex(r'^🗑️ Hapus Akun VMess$'), delete_vmess_start)], states={GET_VMESS_USER_TO_DELETE: [MessageHandler(filters.TEXT & ~filters.COMMAND, delete_vmess_get_user)]}, fallbacks=[cancel_handler]),
+        ConversationHandler(entry_points=[MessageHandler(filters.Regex(r'^🗑️ Hapus Akun Shadowsocks$'), delete_shadowsocks_start)], states={GET_SHADOWSOCKS_USER_TO_DELETE: [MessageHandler(filters.TEXT & ~filters.COMMAND, delete_shadowsocks_get_user)]}, fallbacks=[cancel_handler]),
     ]
     application.add_handlers(conv_handlers)
     
@@ -383,7 +402,9 @@ def main() -> None:
         r'^🔄 Restart Layanan$': restart_services_handler,
         r'^🧹 Clear Cache$': clear_cache_handler,
         r'^📊 Cek Layanan VMess$': check_vmess_service_handler,
-        r'^📊 Cek Layanan VLess$': check_vless_service_handler
+        r'^📊 Cek Layanan VLess$': check_vless_service_handler,
+        r'^📊 Cek Layanan Trojan$': check_trojan_service_handler,
+        r'^📊 Cek Layanan Shadowsocks$': check_shadowsocks_service_handler
     }
     for regex, func in message_handlers.items():
         application.add_handler(MessageHandler(filters.Regex(regex), func))
@@ -395,6 +416,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-    finally:
-        if client: client.close()
-            
