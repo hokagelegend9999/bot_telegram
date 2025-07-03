@@ -84,7 +84,10 @@ SCRIPTS=(
     "bot-trialvless" "bot-trialws" "bot-trialss" "bot-vps-info"
     "resservice" "bot-cek-vless" "bot-cek-vmess" "qris.jpg" "bot-backup"
     "resservice" "bot-cek-login-ssh" "bot-cek-ws" "bot-cek-vless"
-    "bot-delssh" "bot-list-ssh" "bot-deltr"
+    "bot-delssh" "bot-list-ssh" "bot-deltr" "bot-del-vless" "bot-list-vless"
+    "bot-list-vmess" "bot-cek-tr" "bot-cek-ss" "bot-list-shadowsocks" "bot-del-ss"
+    
+    
 )
 for script_name in "${SCRIPTS[@]}"; do
     echo -n "  -> Mengunduh ${script_name}..."
