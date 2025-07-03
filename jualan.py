@@ -21,7 +21,7 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 # --- KONFIGURASI BOT ---
-BOT_TOKEN = '7948291780:AAGMIaOD1cS2l_SZZq6DejAU14VlAWu-sDU'
+BOT_TOKEN = '7948291780:AAGMIaOD1cS2l_SZZq6DejAU14VlAWu-sDU' # <--- TOKEN ANDA
 
 # Daftar Telegram User ID yang menjadi ADMIN
 ADMIN_IDS = [1469244768, 987654321] # <--- GANTI DENGAN USER ID TELEGRAM ADMIN ANDA!
@@ -182,7 +182,8 @@ async def run_ssh_command(command: str):
         return f"💥 <b>Koneksi SSH Gagal!</b> Hubungi admin.\n<pre>{e}</pre>"
     finally:
         if client: client.close()
-            # --- HANDLERS ---
+        
+# --- HANDLERS ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id, user_name = update.effective_user.id, update.effective_user.first_name
     conn = get_db_connection()
@@ -234,7 +235,7 @@ async def create_trial_vmess_handler(update: Update, context: ContextTypes.DEFAU
 async def create_trial_shdwsk_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None: await handle_general_script_button(update, context, '/usr/bin/bot-trialss', 'Membuat trial Shadowsocks...', 'Gagal membuat trial Shadowsocks.', get_shadowsocks_menu_keyboard())
 
 async def topup_saldo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    caption = f"💰 *TOP UP SALDO*\nSaldo Anda: <b>Rp {get_user_balance(update.effective_user.id):,.0f}</b>\n\nTransfer ke:\n[INFO REKENING ANDA]\n\nKonfirmasi ke: @{TELEGRAM_ADMIN_USERNAME}\n\nWhatsApp:\087726917005"
+    caption = f"💰 *TOP UP SALDO*\nSaldo Anda: <b>Rp {get_user_balance(update.effective_user.id):,.0f}</b>\n\nTransfer ke:\n[INFO REKENING ANDA]\n\nKonfirmasi ke: @{TELEGRAM_ADMIN_USERNAME}"
     keyboard = get_admin_main_menu_keyboard() if is_admin(update.effective_user.id) else get_main_menu_keyboard()
     if os.path.exists(QRIS_IMAGE_PATH):
         with open(QRIS_IMAGE_PATH, 'rb') as photo: await update.message.reply_photo(photo=photo, caption=caption, parse_mode='HTML', reply_markup=keyboard)
@@ -328,38 +329,82 @@ async def ssh_get_expired(u,c): return await get_numeric_input(u,c,'expired_days
 async def ssh_get_quota(u,c): return await get_numeric_input(u,c,'quota',SSH_OVPN_GET_IP_LIMIT,"Kuota","Batas IP:")
 async def ssh_get_ip_limit(u,c): await get_numeric_input(u,c,'ip_limit',-1,"Batas IP",""); params=[c.user_data['username'],c.user_data.get('password','12345'),c.user_data['expired_days'],c.user_data['quota'],c.user_data['ip_limit']]; return await process_account_creation(u,c,"SSH","/usr/bin/addssh-bot",params,ACCOUNT_COST_IDR,get_ssh_ovpn_menu_keyboard())
 # ... (similar one-liner-style conversation flows for VMess, VLess, SS, and Admin functions would go here)
-
-# --- FUNGSI UTAMA ---
+# --- FUNGSI UTAMA (SUDAH DIPERBAIKI) ---
 def main() -> None:
     logger.info("Bot is starting...")
     if not all([BOT_TOKEN, SSH_USERNAME, SSH_PASSWORD]): logger.critical("Konfigurasi bot tidak lengkap."); exit(1)
+    
     application = Application.builder().token(BOT_TOKEN).build()
+    
     cancel_handler = CommandHandler("cancel", cancel_conversation)
     
-    # Conversations
-    ssh_conv = ConversationHandler(entry_points=[MessageHandler(filters.Regex(r'➕ Buat Akun SSH Premium'),create_akun_ssh_handler)],states={SSH_OVPN_GET_USERNAME:[MessageHandler(filters.TEXT&~filters.COMMAND,ssh_get_username)],SSH_OVPN_GET_PASSWORD:[MessageHandler(filters.TEXT&~filters.COMMAND,ssh_get_password)],SSH_OVPN_GET_EXPIRED_DAYS:[MessageHandler(filters.TEXT&~filters.COMMAND,ssh_get_expired)],SSH_OVPN_GET_QUOTA:[MessageHandler(filters.TEXT&~filters.COMMAND,ssh_get_quota)],SSH_OVPN_GET_IP_LIMIT:[MessageHandler(filters.TEXT&~filters.COMMAND,ssh_get_ip_limit)]},fallbacks=[cancel_handler],allow_reentry=True)
-    restore_conv = ConversationHandler(entry_points=[MessageHandler(filters.Regex(r'^🔄 Restore VPS$'), restore_vps_start)], states={GET_RESTORE_LINK: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_restore_link_and_run)]}, fallbacks=[cancel_handler])
+    # --- Conversations ---
+    ssh_conv = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex(r'➕ Buat Akun SSH Premium'), create_akun_ssh_handler)],
+        states={
+            SSH_OVPN_GET_USERNAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, ssh_get_username)],
+            SSH_OVPN_GET_PASSWORD: [MessageHandler(filters.TEXT & ~filters.COMMAND, ssh_get_password)],
+            SSH_OVPN_GET_EXPIRED_DAYS: [MessageHandler(filters.TEXT & ~filters.COMMAND, ssh_get_expired)],
+            SSH_OVPN_GET_QUOTA: [MessageHandler(filters.TEXT & ~filters.COMMAND, ssh_get_quota)],
+            SSH_OVPN_GET_IP_LIMIT: [MessageHandler(filters.TEXT & ~filters.COMMAND, ssh_get_ip_limit)]
+        },
+        fallbacks=[cancel_handler],
+        allow_reentry=True
+    )
+    restore_conv = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex(r'^🔄 Restore VPS$'), restore_vps_start)],
+        states={GET_RESTORE_LINK: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_restore_link_and_run)]},
+        fallbacks=[cancel_handler]
+    )
     # (add other conversation handlers here)
     application.add_handler(ssh_conv)
     application.add_handler(restore_conv)
     
-    # Commands and Messages
+    # --- Commands and Messages Handlers ---
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.Regex(r'^🔄 Refresh$'), show_menu))
+
+    # Menu Utama
     application.add_handler(MessageHandler(filters.Regex(r'^🚀 SSH & OVPN$'), menu_ssh_ovpn_main))
     application.add_handler(MessageHandler(filters.Regex(r'^⚡ VMess$'), menu_vmess_main))
     application.add_handler(MessageHandler(filters.Regex(r'^🌀 VLess$'), menu_vless_main))
     application.add_handler(MessageHandler(filters.Regex(r'^🛡️ Trojan$'), menu_trojan_main))
     application.add_handler(MessageHandler(filters.Regex(r'^👻 Shadowsocks$'), menu_shdwsk_main))
-    application.add_handler(MessageHandler(filters.Regex(r'^⬅️ Kembali'), back_to_main_menu))
+    application.add_handler(MessageHandler(filters.Regex(r'^⬅️ Kembali$'), back_to_main_menu))
+    
+    # Menu User
     application.add_handler(MessageHandler(filters.Regex(r'^💰 Cek Saldo Saya$'), check_balance_user_handler))
     application.add_handler(MessageHandler(filters.Regex(r'^📄 Riwayat Saya$'), view_transactions_user_handler))
     application.add_handler(MessageHandler(filters.Regex(r'^💳 Top Up Saldo$'), topup_saldo_handler))
-    application.add_handler(MessageHandler(filters.Regex(r'^🔄 Refresh$'), show_menu))
-    application.add_handler(MessageHandler(filters.Regex(r'^🆓 Coba Gratis'), create_trial_ssh_handler)) # Simplified Regex for all trials
+
+    # --- HANDLER TAMBAHAN (PERBAIKAN) ---
+    # Trial Handlers (Spesifik)
+    application.add_handler(MessageHandler(filters.Regex(r'^🆓 Coba Gratis SSH & OVPN$'), create_trial_ssh_handler))
+    application.add_handler(MessageHandler(filters.Regex(r'^🆓 Coba Gratis VMess$'), create_trial_vmess_handler))
+    application.add_handler(MessageHandler(filters.Regex(r'^🆓 Coba Gratis VLess$'), create_trial_vless_handler))
+    application.add_handler(MessageHandler(filters.Regex(r'^🆓 Coba Gratis Trojan$'), create_trial_trojan_handler))
+    application.add_handler(MessageHandler(filters.Regex(r'^🆓 Coba Gratis Shadowsocks$'), create_trial_shdwsk_handler))
+    
+    # Menu Admin
     application.add_handler(MessageHandler(filters.Regex(r'^👤 Manajemen User$'), manage_users_main))
     application.add_handler(MessageHandler(filters.Regex(r'^🛠️ Pengaturan$'), settings_main_menu))
     application.add_handler(MessageHandler(filters.Regex(r'^💾 Backup VPS$'), backup_vps_handler))
+    application.add_handler(MessageHandler(filters.Regex(r'^📈 Status Layanan$'), check_service_admin_handler))
+    application.add_handler(MessageHandler(filters.Regex(r'^🧾 Semua Transaksi$'), view_all_transactions_admin_handler))
     
+    # Submenu Pengaturan
+    application.add_handler(MessageHandler(filters.Regex(r'^👁️ Cek Koneksi Aktif$'), check_connections_handler))
+    
+    # Submenu Manajemen User
+    application.add_handler(MessageHandler(filters.Regex(r'^👥 Jumlah User$'), total_users_handler))
+    application.add_handler(MessageHandler(filters.Regex(r'^🆕 User Terbaru$'), recent_users_handler))
+    application.add_handler(MessageHandler(filters.Regex(r'^👑 Cek Admin & Saldo$'), view_admins_handler))
+    
+    # Tombol Kembali dari Submenu Admin
+    application.add_handler(MessageHandler(filters.Regex(r'^⬅️ Kembali ke Menu Admin$'), back_to_main_menu))
+    # --- BATAS PERBAIKAN ---
+
+    # Handler untuk perintah tak dikenal (paling bawah)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, unknown))
     
     logger.info("Bot is running...")
