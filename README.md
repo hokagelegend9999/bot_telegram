@@ -3,6 +3,9 @@ Jika Xray Terjadi Error (config json-file tempt -file service )
 - sudo systemctl daemon-reload
 - sudo systemctl restart xray
 - sudo systemctl status xray
+- sudo chmod +x /usr/bin/jualan.py
+- sudo systemctl restart jualan_bot.service
+- sudo systemctl status jualan_bot.service
 
 ## INSTALL SCRIPT 
 
