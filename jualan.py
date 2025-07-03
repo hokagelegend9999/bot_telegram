@@ -89,10 +89,11 @@ def get_main_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('🚀 
 def get_admin_main_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('🚀 SSH & OVPN'), KeyboardButton('⚡ VMess'), KeyboardButton('🌀 VLess')], [KeyboardButton('🛡️ Trojan'), KeyboardButton('👻 Shadowsocks')], [KeyboardButton('📈 Status Layanan'), KeyboardButton('🛠️ Pengaturan')], [KeyboardButton('👤 Manajemen User')], [KeyboardButton('💳 Top Up Saldo'), KeyboardButton('🧾 Semua Transaksi')], [KeyboardButton('🔄 Refresh')]], resize_keyboard=True)
 def get_manage_users_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('💵 Tambah Saldo'), KeyboardButton('📊 Cek Saldo User')], [KeyboardButton('📑 Riwayat User'), KeyboardButton('👑 Cek Admin & Saldo')], [KeyboardButton('👥 Jumlah User'), KeyboardButton('🆕 User Terbaru')], [KeyboardButton('🗑️ Hapus User (Soon)')], [KeyboardButton('⬅️ Kembali ke Menu Admin')]], resize_keyboard=True)
 def get_settings_menu_keyboard():
-    # DIUBAH: Menambahkan tombol Restart Layanan
+    # DIUBAH: Menambahkan tombol Clear Cache
     buttons = [
         [KeyboardButton('💾 Backup VPS'), KeyboardButton('🔄 Restore VPS')],
         [KeyboardButton('👁️ Cek Koneksi Aktif'), KeyboardButton('🔄 Restart Layanan')],
+        [KeyboardButton('🧹 Clear Cache')],
         [KeyboardButton('⚙️ Pengaturan Lain (Soon)')],
         [KeyboardButton('⬅️ Kembali ke Menu Admin')]
     ]
@@ -208,16 +209,13 @@ async def check_service_admin_handler(u,c): await handle_general_script_button(u
 async def settings_main_menu(u,c): await u.message.reply_text("🛠️ *Pengaturan*", reply_markup=get_settings_menu_keyboard(), parse_mode='HTML')
 async def backup_vps_handler(u,c): await handle_general_script_button(u,c,'/usr/bin/bot-backup','Memulai backup...','Gagal backup.',get_settings_menu_keyboard())
 async def check_connections_handler(u,c): await handle_general_script_button(u,c,'/usr/bin/bot-cek-login-ssh','Memeriksa koneksi...','Gagal periksa koneksi.',get_settings_menu_keyboard())
+async def restart_services_handler(u,c): await handle_general_script_button(u,c,'/usr/bin/resservice','Merestart semua layanan...','Gagal merestart layanan.',get_settings_menu_keyboard())
+async def clear_cache_handler(u,c): await handle_general_script_button(u,c,'/usr/bin/bot-clearcache','Membersihkan RAM Cache...','Gagal membersihkan cache.',get_settings_menu_keyboard())
 async def view_all_transactions_admin_handler(u,c):
     if not is_admin(u.effective_user.id): return
     txs = get_all_transactions()
     msg = "🧾 *20 Transaksi Terbaru*\n\n" + "".join([f"👤 <code>{tx['user_id']}</code>: {'🟢 +' if tx['amount'] >= 0 else '🔴'}<b>Rp {abs(tx['amount']):,.0f}</b>\n<i>({tx['type'].replace('_', ' ').title()})</i>\n" for tx in txs]) if txs else "📂 Belum ada transaksi."
     await u.message.reply_text(msg, parse_mode='HTML', reply_markup=get_admin_main_menu_keyboard())
-
-# FUNGSI BARU UNTUK RESTART LAYANAN
-async def restart_services_handler(u,c):
-    if not is_admin(u.effective_user.id): return
-    await handle_general_script_button(u,c,'/usr/bin/resservice','Merestart semua layanan...','Gagal merestart layanan.',get_settings_menu_keyboard())
 
 def create_conversation_prompt(prompt_text: str) -> str: return f"{prompt_text}\n\n_Ketik /cancel untuk batal._"
 async def start_account_creation(u,c,srv,cost,next_st,kbd):
@@ -245,7 +243,7 @@ async def process_account_creation(u,c,srv,scr,params,cost,kbd):
 
 async def create_akun_ssh_start(u,c): return await start_account_creation(u,c,"SSH & OVPN",ACCOUNT_COST_IDR,SSH_OVPN_GET_USERNAME,get_ssh_ovpn_menu_keyboard())
 async def ssh_get_username(u,c): return await get_valid_username(u,c,'username',SSH_OVPN_GET_PASSWORD,"Masukkan Password:")
-async def ssh_get_password(u,c): c.user_data['password']=u.message.text; return await get_numeric_input(u,c,'expired_days',SSH_OVPN_GET_QUOTA,"Password","Masa Aktif (hari):")
+async def ssh_get_password(u,c): c.user_data['password']=u.message.text; return await get_numeric_input(u,c,'expired_days',SSH_OVPN_GET_EXPIRED_DAYS,"Password","Masa Aktif (hari):")
 async def ssh_get_expired_days(u,c): return await get_numeric_input(u,c,'expired_days',SSH_OVPN_GET_QUOTA,"Masa Aktif","Kuota (GB):")
 async def ssh_get_quota(u,c): return await get_numeric_input(u,c,'quota',SSH_OVPN_GET_IP_LIMIT,"Kuota","Batas IP:")
 async def ssh_get_ip_limit(u,c):
@@ -312,7 +310,6 @@ def main() -> None:
     application = Application.builder().token(BOT_TOKEN).build()
     cancel_handler = CommandHandler("cancel", cancel_conversation)
     
-    # --- PENDAFTARAN SEMUA HANDLER ---
     conv_handlers = [
         ConversationHandler(entry_points=[MessageHandler(filters.Regex(r'^➕ Buat Akun SSH Premium$'), create_akun_ssh_start)], states={SSH_OVPN_GET_USERNAME:[MessageHandler(filters.TEXT&~filters.COMMAND, ssh_get_username)], SSH_OVPN_GET_PASSWORD:[MessageHandler(filters.TEXT&~filters.COMMAND, ssh_get_password)], SSH_OVPN_GET_EXPIRED_DAYS:[MessageHandler(filters.TEXT&~filters.COMMAND, ssh_get_expired_days)], SSH_OVPN_GET_QUOTA:[MessageHandler(filters.TEXT&~filters.COMMAND, ssh_get_quota)], SSH_OVPN_GET_IP_LIMIT:[MessageHandler(filters.TEXT&~filters.COMMAND, ssh_get_ip_limit)]}, fallbacks=[cancel_handler], allow_reentry=True),
         ConversationHandler(entry_points=[MessageHandler(filters.Regex(r'^➕ Buat Akun VMess Premium$'), create_akun_vmess_start)], states={VMESS_GET_USERNAME:[MessageHandler(filters.TEXT&~filters.COMMAND, vmess_get_username)], VMESS_GET_EXPIRED_DAYS:[MessageHandler(filters.TEXT&~filters.COMMAND, vmess_get_expired_days)], VMESS_GET_QUOTA:[MessageHandler(filters.TEXT&~filters.COMMAND, vmess_get_quota)], VMESS_GET_IP_LIMIT:[MessageHandler(filters.TEXT&~filters.COMMAND, vmess_get_ip_limit)]}, fallbacks=[cancel_handler], allow_reentry=True),
@@ -348,8 +345,8 @@ def main() -> None:
         r'^🆕 User Terbaru$': recent_users_handler,
         r'^👁️ Cek Koneksi Aktif$': check_connections_handler,
         r'^🧾 Semua Transaksi$': view_all_transactions_admin_handler,
-        # DIUBAH: Menambahkan handler untuk tombol baru
-        r'^🔄 Restart Layanan$': restart_services_handler
+        r'^🔄 Restart Layanan$': restart_services_handler,
+        r'^🧹 Clear Cache$': clear_cache_handler
     }
     for regex, func in message_handlers.items():
         application.add_handler(MessageHandler(filters.Regex(regex), func))
