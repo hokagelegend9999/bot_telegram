@@ -26,8 +26,8 @@ fi
 # --- Meminta Input dari Pengguna ---
 clear
 echo -e "${GREEN}=====================================================${NC}"
-echo -e "${GREEN} Selamat Datang di Installer Otomatis Jualan Bot ${NC}"
-echo -e "${GREEN}             (Versi Final dan Stabil)              ${NC}"
+echo -e "${GREEN} Selamat Datang di Hokage Legend Store Telegram Install ${NC}"
+echo -e "${GREEN}         (Versi Gnome Bot Jualan Telegram)              ${NC}"
 echo -e "${GREEN}=====================================================${NC}"
 echo "Pastikan Anda sudah menyiapkan informasi berikut dan"
 echo "telah mengubah jualan.py di GitHub sesuai instruksi."
