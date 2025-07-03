@@ -40,7 +40,8 @@ SETTINGS_MENU = range(16, 17)
 VLESS_GET_USERNAME, VLESS_GET_EXPIRED_DAYS, VLESS_GET_QUOTA, VLESS_GET_IP_LIMIT = range(17, 21)
 GET_RESTORE_LINK = range(21, 22)
 GET_SSH_USER_TO_DELETE = range(22, 23)
-GET_TROJAN_USER_TO_DELETE = range(23, 24) # State baru
+GET_TROJAN_USER_TO_DELETE = range(23, 24)
+GET_VLESS_USER_TO_DELETE = range(24, 25) # State baru
 
 # --- FUNGSI DATABASE ---
 def get_db_connection(): conn = sqlite3.connect(DB_FILE); conn.row_factory = sqlite3.Row; return conn
@@ -76,16 +77,17 @@ def get_admin_main_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton(
 def get_manage_users_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('💵 Tambah Saldo'), KeyboardButton('📊 Cek Saldo User')], [KeyboardButton('📑 Riwayat User'), KeyboardButton('👑 Cek Admin & Saldo')], [KeyboardButton('👥 Jumlah User'), KeyboardButton('🆕 User Terbaru')], [KeyboardButton('🗑️ Hapus User (Soon)')], [KeyboardButton('⬅️ Kembali ke Menu Admin')]], resize_keyboard=True)
 def get_settings_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('💾 Backup VPS'), KeyboardButton('🔄 Restore VPS')], [KeyboardButton('👁️ Cek Koneksi Aktif'), KeyboardButton('🔄 Restart Layanan')], [KeyboardButton('🧹 Clear Cache')], [KeyboardButton('⚙️ Pengaturan Lain (Soon)')], [KeyboardButton('⬅️ Kembali ke Menu Admin')]], resize_keyboard=True)
 def get_ssh_ovpn_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('➕ Buat Akun SSH Premium'), KeyboardButton('🗑️ Hapus Akun SSH')], [KeyboardButton('🆓 Coba Gratis SSH & OVPN')], [KeyboardButton('ℹ️ Info Layanan SSH')], [KeyboardButton('⬅️ Kembali')]], resize_keyboard=True)
-def get_vmess_creation_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('➕ Buat Akun VMess Premium')], [KeyboardButton('🆓 Coba Gratis VMess')], [KeyboardButton('📊 Cek Layanan VMess')], [KeyboardButton('⬅️ Kembali')]], resize_keyboard=True)
-def get_vless_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('➕ Buat Akun VLess Premium')], [KeyboardButton('🆓 Coba Gratis VLess')], [KeyboardButton('📊 Cek Layanan VLess')], [KeyboardButton('⬅️ Kembali')]], resize_keyboard=True)
-def get_trojan_menu_keyboard():
+def get_vmess_creation_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('➕ Buat Akun VMess Premium')], [KeyboardButton('🗑️ Hapus Akun VMess')], [KeyboardButton('🆓 Coba Gratis VMess')], [KeyboardButton('📊 Cek Layanan VMess')], [KeyboardButton('⬅️ Kembali')]], resize_keyboard=True)
+def get_vless_menu_keyboard():
     buttons = [
-        [KeyboardButton('➕ Buat Akun Trojan Premium'), KeyboardButton('🗑️ Hapus Akun Trojan')],
-        [KeyboardButton('🆓 Coba Gratis Trojan')],
+        [KeyboardButton('➕ Buat Akun VLess Premium'), KeyboardButton('🗑️ Hapus Akun VLess')],
+        [KeyboardButton('🆓 Coba Gratis VLess')],
+        [KeyboardButton('📊 Cek Layanan VLess')],
         [KeyboardButton('⬅️ Kembali')]
     ]
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
-def get_shadowsocks_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('➕ Buat Akun Shadowsocks')], [KeyboardButton('🆓 Coba Gratis Shadowsocks')], [KeyboardButton('⬅️ Kembali')]], resize_keyboard=True)
+def get_trojan_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('➕ Buat Akun Trojan Premium'), KeyboardButton('🗑️ Hapus Akun Trojan')], [KeyboardButton('🆓 Coba Gratis Trojan')], [KeyboardButton('⬅️ Kembali')]], resize_keyboard=True)
+def get_shadowsocks_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('➕ Buat Akun Shadowsocks'), KeyboardButton('🗑️ Hapus Akun Shadowsocks')], [KeyboardButton('🆓 Coba Gratis Shadowsocks')], [KeyboardButton('⬅️ Kembali')]], resize_keyboard=True)
 
 async def run_ssh_command(command: str):
     client = paramiko.SSHClient()
@@ -226,6 +228,7 @@ async def process_account_creation(u,c,srv,scr,params,cost,kbd):
     else: await u.message.reply_text(f"🎉 Akun {srv} Dibuat!\n<pre>{res}</pre>", reply_markup=kbd, parse_mode='HTML')
     c.user_data.clear(); return ConversationHandler.END
 
+# --- DEFINISI SEMUA FUNGSI CONVERSATION ---
 async def create_akun_ssh_start(u,c): return await start_account_creation(u,c,"SSH & OVPN",ACCOUNT_COST_IDR,SSH_OVPN_GET_USERNAME,get_ssh_ovpn_menu_keyboard())
 async def ssh_get_username(u,c): return await get_valid_username(u,c,'username',SSH_OVPN_GET_PASSWORD,"Masukkan Password:")
 async def ssh_get_password(u,c): c.user_data['password']=u.message.text; return await get_numeric_input(u,c,'expired_days',SSH_OVPN_GET_EXPIRED_DAYS,"Password","Masa Aktif (hari):")
@@ -291,7 +294,7 @@ async def delete_ssh_start(u,c):
     if not is_admin(u.effective_user.id): return ConversationHandler.END
     await u.message.reply_text("⏳ Mengambil daftar pengguna SSH...", parse_mode='HTML')
     user_list = await run_ssh_command("bash /usr/bin/bot-list-ssh")
-    await u.message.reply_text(f"<pre>{user_list}</pre>\n\n" + create_conversation_prompt("👆 Ketik *Username* yang ingin dihapus:"), parse_mode='HTML')
+    await u.message.reply_text(f"<pre>{user_list}</pre>\n\n" + create_conversation_prompt("👆 Ketik *Username* dari daftar di atas yang ingin Anda hapus:"), parse_mode='HTML')
     return GET_SSH_USER_TO_DELETE
 async def delete_ssh_get_user(u,c):
     username = u.message.text.strip()
@@ -313,6 +316,19 @@ async def delete_trojan_get_user(u,c):
     result = await run_ssh_command(f"bash /usr/bin/bot-del-trojan '{username}'")
     await u.message.reply_text(result, reply_markup=get_trojan_menu_keyboard())
     return ConversationHandler.END
+async def delete_vless_start(u,c):
+    if not is_admin(u.effective_user.id): return ConversationHandler.END
+    await u.message.reply_text("⏳ Mengambil daftar pengguna VLess...", parse_mode='HTML')
+    user_list = await run_ssh_command("bash /usr/bin/bot-list-vless")
+    await u.message.reply_text(f"<pre>{user_list}</pre>\n\n" + create_conversation_prompt("👆 Ketik *Username* dari daftar di atas yang ingin Anda hapus:"), parse_mode='HTML')
+    return GET_VLESS_USER_TO_DELETE
+async def delete_vless_get_user(u,c):
+    username = u.message.text.strip()
+    if not username: await u.message.reply_text("Username tidak boleh kosong. /cancel untuk batal."); return GET_VLESS_USER_TO_DELETE
+    await u.message.reply_text(f"⏳ Menghapus pengguna '{username}'...", parse_mode='HTML')
+    result = await run_ssh_command(f"bash /usr/bin/bot-del-vless '{username}'")
+    await u.message.reply_text(result, reply_markup=get_vless_menu_keyboard())
+    return ConversationHandler.END
 
 def main() -> None:
     logger.info("Bot is starting...")
@@ -332,6 +348,7 @@ def main() -> None:
         ConversationHandler(entry_points=[MessageHandler(filters.Regex(r'^🔄 Restore VPS$'), restore_vps_start)], states={GET_RESTORE_LINK: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_restore_link_and_run)]}, fallbacks=[cancel_handler]),
         ConversationHandler(entry_points=[MessageHandler(filters.Regex(r'^🗑️ Hapus Akun SSH$'), delete_ssh_start)], states={GET_SSH_USER_TO_DELETE: [MessageHandler(filters.TEXT & ~filters.COMMAND, delete_ssh_get_user)]}, fallbacks=[cancel_handler]),
         ConversationHandler(entry_points=[MessageHandler(filters.Regex(r'^🗑️ Hapus Akun Trojan$'), delete_trojan_start)], states={GET_TROJAN_USER_TO_DELETE: [MessageHandler(filters.TEXT & ~filters.COMMAND, delete_trojan_get_user)]}, fallbacks=[cancel_handler]),
+        ConversationHandler(entry_points=[MessageHandler(filters.Regex(r'^🗑️ Hapus Akun VLess$'), delete_vless_start)], states={GET_VLESS_USER_TO_DELETE: [MessageHandler(filters.TEXT & ~filters.COMMAND, delete_vless_get_user)]}, fallbacks=[cancel_handler]),
     ]
     application.add_handlers(conv_handlers)
     
