@@ -1,0 +1,52 @@
+#!/bin/bash
+
+# Skrip untuk merestart layanan-layanan penting di VPS
+
+echo "Memulai proses restart layanan..."
+
+# Fungsi untuk merestart layanan dan memberikan output
+restart_service() {
+    SERVICE_NAME=$1
+    echo "-> Merestart ${SERVICE_NAME}..."
+    # Redirect stderr ke stdout agar error juga tertangkap oleh bot
+    systemctl restart ${SERVICE_NAME} 2>&1
+}
+
+# Reload daemon untuk memastikan semua konfigurasi terbaru terbaca
+systemctl daemon-reload
+
+# Restart layanan utama
+restart_service nginx
+restart_service xray
+restart_service fail2ban
+restart_service ssh
+restart_service cron
+
+# Restart layanan lain (jika ada, jika tidak ada akan menampilkan error tapi tidak menghentikan skrip)
+restart_service ws
+restart_service rc-local
+restart_service dropbear
+restart_service openvpn
+restart_service haproxy
+restart_service netfilter-persistent
+restart_service squid
+
+# Restart layanan UDP-MINI (jika ada)
+echo "-> Merestart layanan UDP..."
+systemctl disable udp-mini-1 >/dev/null 2>&1
+systemctl stop udp-mini-1 >/dev/null 2>&1
+systemctl enable udp-mini-1 >/dev/null 2>&1
+systemctl start udp-mini-1 >/dev/null 2>&1
+
+systemctl disable udp-mini-2 >/dev/null 2>&1
+systemctl stop udp-mini-2 >/dev/null 2>&1
+systemctl enable udp-mini-2 >/dev/null 2>&1
+systemctl start udp-mini-2 >/dev/null 2>&1
+
+systemctl disable udp-mini-3 >/dev/null 2>&1
+systemctl stop udp-mini-3 >/dev/null 2>&1
+systemctl enable udp-mini-3 >/dev/null 2>&1
+systemctl start udp-mini-3 >/dev/null 2>&1
+
+echo ""
+echo "✅ Semua proses restart telah selesai dijalankan."
