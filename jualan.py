@@ -88,15 +88,7 @@ def is_admin(user_id: int) -> bool: return user_id in ADMIN_IDS
 def get_main_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('🚀 SSH & OVPN')], [KeyboardButton('⚡ VMess'), KeyboardButton('🌀 VLess')], [KeyboardButton('🛡️ Trojan'), KeyboardButton('👻 Shadowsocks')], [KeyboardButton('💰 Cek Saldo Saya'), KeyboardButton('📄 Riwayat Saya')], [KeyboardButton('💳 Top Up Saldo')], [KeyboardButton('🔄 Refresh')]], resize_keyboard=True)
 def get_admin_main_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('🚀 SSH & OVPN'), KeyboardButton('⚡ VMess'), KeyboardButton('🌀 VLess')], [KeyboardButton('🛡️ Trojan'), KeyboardButton('👻 Shadowsocks')], [KeyboardButton('📈 Status Layanan'), KeyboardButton('🛠️ Pengaturan')], [KeyboardButton('👤 Manajemen User')], [KeyboardButton('💳 Top Up Saldo'), KeyboardButton('🧾 Semua Transaksi')], [KeyboardButton('🔄 Refresh')]], resize_keyboard=True)
 def get_manage_users_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('💵 Tambah Saldo'), KeyboardButton('📊 Cek Saldo User')], [KeyboardButton('📑 Riwayat User'), KeyboardButton('👑 Cek Admin & Saldo')], [KeyboardButton('👥 Jumlah User'), KeyboardButton('🆕 User Terbaru')], [KeyboardButton('🗑️ Hapus User (Soon)')], [KeyboardButton('⬅️ Kembali ke Menu Admin')]], resize_keyboard=True)
-def get_settings_menu_keyboard():
-    buttons = [
-        [KeyboardButton('💾 Backup VPS'), KeyboardButton('🔄 Restore VPS')],
-        [KeyboardButton('👁️ Cek Koneksi Aktif'), KeyboardButton('🔄 Restart Layanan')],
-        [KeyboardButton('🧹 Clear Cache')],
-        [KeyboardButton('⚙️ Pengaturan Lain (Soon)')],
-        [KeyboardButton('⬅️ Kembali ke Menu Admin')]
-    ]
-    return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
+def get_settings_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('💾 Backup VPS'), KeyboardButton('🔄 Restore VPS')], [KeyboardButton('👁️ Cek Koneksi Aktif'), KeyboardButton('🔄 Restart Layanan')], [KeyboardButton('🧹 Clear Cache')], [KeyboardButton('⚙️ Pengaturan Lain (Soon)')], [KeyboardButton('⬅️ Kembali ke Menu Admin')]], resize_keyboard=True)
 def get_ssh_ovpn_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('➕ Buat Akun SSH Premium')], [KeyboardButton('🆓 Coba Gratis SSH & OVPN')], [KeyboardButton('ℹ️ Info Layanan SSH')], [KeyboardButton('⬅️ Kembali')]], resize_keyboard=True)
 def get_vmess_creation_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('➕ Buat Akun VMess Premium')], [KeyboardButton('🆓 Coba Gratis VMess')], [KeyboardButton('📊 Cek Layanan VMess')], [KeyboardButton('⬅️ Kembali')]], resize_keyboard=True)
 def get_vless_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('➕ Buat Akun VLess Premium')], [KeyboardButton('🆓 Coba Gratis VLess')], [KeyboardButton('📊 Cek Layanan VLess')], [KeyboardButton('⬅️ Kembali')]], resize_keyboard=True)
@@ -211,6 +203,7 @@ async def check_connections_handler(u,c): await handle_general_script_button(u,c
 async def restart_services_handler(u,c): await handle_general_script_button(u,c,'/usr/bin/resservice','Merestart semua layanan...','Gagal merestart layanan.',get_settings_menu_keyboard())
 async def clear_cache_handler(u,c): await handle_general_script_button(u,c,'/usr/bin/bot-clearcache','Membersihkan RAM Cache...','Gagal membersihkan cache.',get_settings_menu_keyboard())
 async def check_vmess_service_handler(u,c): await handle_general_script_button(u,c,'/usr/bin/bot-cek-ws', 'Memeriksa Pengguna Login...', 'Gagal memeriksa pengguna.', get_vmess_creation_menu_keyboard())
+async def check_vless_service_handler(u,c): await handle_general_script_button(u,c,'/usr/bin/bot-cek-vless', 'Memeriksa Pengguna Login...', 'Gagal memeriksa pengguna.', get_vless_menu_keyboard())
 async def view_all_transactions_admin_handler(u,c):
     if not is_admin(u.effective_user.id): return
     txs = get_all_transactions()
@@ -347,7 +340,8 @@ def main() -> None:
         r'^🧾 Semua Transaksi$': view_all_transactions_admin_handler,
         r'^🔄 Restart Layanan$': restart_services_handler,
         r'^🧹 Clear Cache$': clear_cache_handler,
-        r'^📊 Cek Layanan VMess$': check_vmess_service_handler
+        r'^📊 Cek Layanan VMess$': check_vmess_service_handler,
+        r'^📊 Cek Layanan VLess$': check_vless_service_handler
     }
     for regex, func in message_handlers.items():
         application.add_handler(MessageHandler(filters.Regex(regex), func))
