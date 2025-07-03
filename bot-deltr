@@ -1,0 +1,40 @@
+#!/bin/bash
+
+# Skrip untuk menghapus user Trojan berdasarkan argumen
+
+if [ -z "$1" ]; then
+    echo "Error: Username tidak diberikan."
+    exit 1
+fi
+
+user="$1"
+
+# Cek apakah user ada di dalam config.json
+if ! grep -q -wE "^#! $user" "/etc/xray/config.json"; then
+    echo "❌ Gagal: User '$user' tidak ditemukan."
+    exit 1
+fi
+
+# Ekstrak tanggal kadaluarsa untuk digunakan di perintah sed
+exp=$(grep -wE "^#! $user" "/etc/xray/config.json" | cut -d ' ' -f 3)
+
+# Hapus baris komentar dan baris JSON user dari config.json
+# Metode ini bergantung pada struktur file config asli Anda
+sed -i "/^#! $user $exp/,/},{/d" /etc/xray/config.json
+
+# Hapus dari database teks (jika ada)
+if [ -f "/etc/trojan/.trojan.db" ]; then
+    sed -i "/\b$user\b/d" /etc/trojan/.trojan.db
+fi
+
+# Hapus file limit (jika ada)
+if [ -f "/etc/trojan/$user" ]; then
+    rm -f "/etc/trojan/$user"
+fi
+
+# Restart Xray menggunakan skrip perantara kita agar config dibersihkan
+systemctl restart xray
+
+echo "✅ User Trojan '$user' berhasil dihapus."
+
+exit 0
