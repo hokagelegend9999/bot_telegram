@@ -39,46 +39,31 @@ VIEW_USER_TX_GET_USER_ID = range(15, 16)
 SETTINGS_MENU = range(16, 17)
 VLESS_GET_USERNAME, VLESS_GET_EXPIRED_DAYS, VLESS_GET_QUOTA, VLESS_GET_IP_LIMIT = range(17, 21)
 GET_RESTORE_LINK = range(21, 22)
+GET_SSH_USER_TO_DELETE = range(22, 23) # State baru untuk hapus user
 
 # --- FUNGSI DATABASE ---
-def get_db_connection():
-    conn = sqlite3.connect(DB_FILE); conn.row_factory = sqlite3.Row; return conn
-
+def get_db_connection(): conn = sqlite3.connect(DB_FILE); conn.row_factory = sqlite3.Row; return conn
 def init_db():
     conn = get_db_connection()
     conn.cursor().execute('CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, balance REAL DEFAULT 0.0, registered_at TEXT)')
     conn.cursor().execute('CREATE TABLE IF NOT EXISTS transactions (transaction_id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, type TEXT NOT NULL, amount REAL NOT NULL, timestamp TEXT NOT NULL, description TEXT, FOREIGN KEY (user_id) REFERENCES users (user_id))')
     conn.commit(); conn.close()
-
-def get_user_balance(user_id: int) -> float:
-    conn = get_db_connection(); result = conn.cursor().execute("SELECT balance FROM users WHERE user_id = ?", (user_id,)).fetchone(); conn.close(); return result['balance'] if result else 0.0
-
+def get_user_balance(user_id: int) -> float: conn = get_db_connection(); result = conn.cursor().execute("SELECT balance FROM users WHERE user_id = ?", (user_id,)).fetchone(); conn.close(); return result['balance'] if result else 0.0
 def update_user_balance(user_id: int, amount: float, transaction_type: str, description: str, is_deduction: bool = False) -> bool:
     conn = get_db_connection()
     try:
         if is_deduction and get_user_balance(user_id) < amount: return False
-        cursor = conn.cursor()
-        cursor.execute(f"UPDATE users SET balance = balance {'-' if is_deduction else '+'} ? WHERE user_id = ?", (amount, user_id))
+        cursor = conn.cursor(); cursor.execute(f"UPDATE users SET balance = balance {'-' if is_deduction else '+'} ? WHERE user_id = ?", (amount, user_id))
         ts = DT.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         cursor.execute("INSERT INTO transactions (user_id, type, amount, timestamp, description) VALUES (?, ?, ?, ?, ?)", (user_id, transaction_type, amount if not is_deduction else -amount, ts, description))
         conn.commit(); return True
-    except sqlite3.Error as e:
-        logger.error(f"DB Error: {e}"); conn.rollback(); return False
+    except sqlite3.Error as e: logger.error(f"DB Error: {e}"); conn.rollback(); return False
     finally:
         if conn: conn.close()
-
-def get_user_transactions(user_id: int, limit: int = 10) -> list:
-    conn = get_db_connection(); txs = conn.cursor().execute("SELECT * FROM transactions WHERE user_id = ? ORDER BY timestamp DESC LIMIT ?", (user_id, limit)).fetchall(); conn.close(); return [dict(row) for row in txs]
-
-def get_all_transactions(limit: int = 20) -> list:
-    conn = get_db_connection(); txs = conn.cursor().execute("SELECT * FROM transactions ORDER BY timestamp DESC LIMIT ?", (limit,)).fetchall(); conn.close(); return [dict(row) for row in txs]
-
-def count_all_users() -> int:
-    conn = get_db_connection(); count = conn.cursor().execute("SELECT COUNT(user_id) FROM users").fetchone()[0]; conn.close(); return count
-
-def get_recent_users(limit: int = 20) -> list:
-    conn = get_db_connection(); users = conn.cursor().execute("SELECT user_id, registered_at FROM users ORDER BY registered_at DESC LIMIT ?", (limit,)).fetchall(); conn.close(); return [dict(row) for row in users]
-
+def get_user_transactions(user_id: int, limit: int = 10) -> list: conn = get_db_connection(); txs = conn.cursor().execute("SELECT * FROM transactions WHERE user_id = ? ORDER BY timestamp DESC LIMIT ?", (user_id, limit)).fetchall(); conn.close(); return [dict(row) for row in txs]
+def get_all_transactions(limit: int = 20) -> list: conn = get_db_connection(); txs = conn.cursor().execute("SELECT * FROM transactions ORDER BY timestamp DESC LIMIT ?", (limit,)).fetchall(); conn.close(); return [dict(row) for row in txs]
+def count_all_users() -> int: conn = get_db_connection(); count = conn.cursor().execute("SELECT COUNT(user_id) FROM users").fetchone()[0]; conn.close(); return count
+def get_recent_users(limit: int = 20) -> list: conn = get_db_connection(); users = conn.cursor().execute("SELECT user_id, registered_at FROM users ORDER BY registered_at DESC LIMIT ?", (limit,)).fetchall(); conn.close(); return [dict(row) for row in users]
 init_db()
 logger.info("Database initialized.")
 
@@ -89,7 +74,15 @@ def get_main_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('🚀 
 def get_admin_main_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('🚀 SSH & OVPN'), KeyboardButton('⚡ VMess'), KeyboardButton('🌀 VLess')], [KeyboardButton('🛡️ Trojan'), KeyboardButton('👻 Shadowsocks')], [KeyboardButton('📈 Status Layanan'), KeyboardButton('🛠️ Pengaturan')], [KeyboardButton('👤 Manajemen User')], [KeyboardButton('💳 Top Up Saldo'), KeyboardButton('🧾 Semua Transaksi')], [KeyboardButton('🔄 Refresh')]], resize_keyboard=True)
 def get_manage_users_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('💵 Tambah Saldo'), KeyboardButton('📊 Cek Saldo User')], [KeyboardButton('📑 Riwayat User'), KeyboardButton('👑 Cek Admin & Saldo')], [KeyboardButton('👥 Jumlah User'), KeyboardButton('🆕 User Terbaru')], [KeyboardButton('🗑️ Hapus User (Soon)')], [KeyboardButton('⬅️ Kembali ke Menu Admin')]], resize_keyboard=True)
 def get_settings_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('💾 Backup VPS'), KeyboardButton('🔄 Restore VPS')], [KeyboardButton('👁️ Cek Koneksi Aktif'), KeyboardButton('🔄 Restart Layanan')], [KeyboardButton('🧹 Clear Cache')], [KeyboardButton('⚙️ Pengaturan Lain (Soon)')], [KeyboardButton('⬅️ Kembali ke Menu Admin')]], resize_keyboard=True)
-def get_ssh_ovpn_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('➕ Buat Akun SSH Premium')], [KeyboardButton('🆓 Coba Gratis SSH & OVPN')], [KeyboardButton('ℹ️ Info Layanan SSH')], [KeyboardButton('⬅️ Kembali')]], resize_keyboard=True)
+def get_ssh_ovpn_menu_keyboard():
+    # DIUBAH: Menambahkan tombol Hapus Akun
+    buttons = [
+        [KeyboardButton('➕ Buat Akun SSH Premium'), KeyboardButton('🗑️ Hapus Akun SSH')],
+        [KeyboardButton('🆓 Coba Gratis SSH & OVPN')],
+        [KeyboardButton('ℹ️ Info Layanan SSH')],
+        [KeyboardButton('⬅️ Kembali')]
+    ]
+    return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
 def get_vmess_creation_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('➕ Buat Akun VMess Premium')], [KeyboardButton('🆓 Coba Gratis VMess')], [KeyboardButton('📊 Cek Layanan VMess')], [KeyboardButton('⬅️ Kembali')]], resize_keyboard=True)
 def get_vless_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('➕ Buat Akun VLess Premium')], [KeyboardButton('🆓 Coba Gratis VLess')], [KeyboardButton('📊 Cek Layanan VLess')], [KeyboardButton('⬅️ Kembali')]], resize_keyboard=True)
 def get_trojan_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('➕ Buat Akun Trojan Premium')], [KeyboardButton('🆓 Coba Gratis Trojan')], [KeyboardButton('⬅️ Kembali')]], resize_keyboard=True)
@@ -295,6 +288,19 @@ async def get_restore_link_and_run(u,c):
     await u.message.reply_text("⏳ *Memulai restore...*", parse_mode='HTML')
     result = await run_ssh_command(f"bash /usr/bin/bot-restore '{link}'")
     await u.message.reply_text(f"✅ *Hasil Restore:*\n<pre>{result}</pre>", parse_mode='HTML', reply_markup=get_admin_main_menu_keyboard()); return ConversationHandler.END
+async def delete_ssh_start(u,c):
+    if not is_admin(u.effective_user.id): return ConversationHandler.END
+    await u.message.reply_text("⏳ Mengambil daftar pengguna SSH...", parse_mode='HTML')
+    user_list = await run_ssh_command("bash /usr/bin/bot-list-ssh")
+    await u.message.reply_text(f"<pre>{user_list}</pre>\n\n" + create_conversation_prompt("👆 Silakan ketik *Username* dari daftar di atas yang ingin Anda hapus:"), parse_mode='HTML')
+    return GET_SSH_USER_TO_DELETE
+async def delete_ssh_get_user(u,c):
+    username = u.message.text.strip()
+    if not username: await u.message.reply_text("Username tidak boleh kosong. /cancel untuk batal."); return GET_SSH_USER_TO_DELETE
+    await u.message.reply_text(f"⏳ Menghapus pengguna '{username}'...", parse_mode='HTML')
+    result = await run_ssh_command(f"bash /usr/bin/bot-delssh '{username}'")
+    await u.message.reply_text(result, reply_markup=get_ssh_ovpn_menu_keyboard())
+    return ConversationHandler.END
 
 def main() -> None:
     logger.info("Bot is starting...")
@@ -311,7 +317,8 @@ def main() -> None:
         ConversationHandler(entry_points=[MessageHandler(filters.Regex(r'^💵 Tambah Saldo$'), add_balance_conversation_start)], states={ADD_BALANCE_GET_USER_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_balance_get_user_id_step)], ADD_BALANCE_GET_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_balance_get_amount_step)]}, fallbacks=[cancel_handler]),
         ConversationHandler(entry_points=[MessageHandler(filters.Regex(r'^📊 Cek Saldo User$'), check_user_balance_conversation_start)], states={CHECK_BALANCE_GET_USER_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, check_user_balance_get_user_id_step)]}, fallbacks=[cancel_handler]),
         ConversationHandler(entry_points=[MessageHandler(filters.Regex(r'^📑 Riwayat User$'), view_user_tx_conversation_start)], states={VIEW_USER_TX_GET_USER_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, view_user_tx_get_user_id_step)]}, fallbacks=[cancel_handler]),
-        ConversationHandler(entry_points=[MessageHandler(filters.Regex(r'^🔄 Restore VPS$'), restore_vps_start)], states={GET_RESTORE_LINK: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_restore_link_and_run)]}, fallbacks=[cancel_handler])
+        ConversationHandler(entry_points=[MessageHandler(filters.Regex(r'^🔄 Restore VPS$'), restore_vps_start)], states={GET_RESTORE_LINK: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_restore_link_and_run)]}, fallbacks=[cancel_handler]),
+        ConversationHandler(entry_points=[MessageHandler(filters.Regex(r'^🗑️ Hapus Akun SSH$'), delete_ssh_start)], states={GET_SSH_USER_TO_DELETE: [MessageHandler(filters.TEXT & ~filters.COMMAND, delete_ssh_get_user)]}, fallbacks=[cancel_handler]),
     ]
     application.add_handlers(conv_handlers)
     
