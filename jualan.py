@@ -16,6 +16,7 @@ logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
+# --- KONFIGURASI ---
 BOT_TOKEN = '7948291780:AAGMIaOD1cS2l_SZZq6DejAU14VlAWu-sDU'
 ADMIN_IDS = [1469244768, 987654321]
 DB_FILE = '/usr/bin/jualan.db'
@@ -28,6 +29,7 @@ QRIS_IMAGE_PATH = "/usr/bin/qris.jpg"
 QRIS_IMAGE_URL_FALLBACK = "http://aws.hokagelegend.web.id:89/qris.jpg"
 TELEGRAM_ADMIN_USERNAME = "HookageLegend"
 
+# --- STATES UNTUK CONVERSATIONS ---
 VMESS_GET_USERNAME, VMESS_GET_EXPIRED_DAYS, VMESS_GET_QUOTA, VMESS_GET_IP_LIMIT = range(4)
 SHADOWSOCKS_GET_USERNAME, SHADOWSOCKS_GET_EXPIRED_DAYS, SHADOWSOCKS_GET_QUOTA = range(4, 7)
 SSH_OVPN_GET_USERNAME, SSH_OVPN_GET_PASSWORD, SSH_OVPN_GET_EXPIRED_DAYS, SSH_OVPN_GET_QUOTA, SSH_OVPN_GET_IP_LIMIT = range(7, 12)
@@ -38,6 +40,7 @@ SETTINGS_MENU = range(16, 17)
 VLESS_GET_USERNAME, VLESS_GET_EXPIRED_DAYS, VLESS_GET_QUOTA, VLESS_GET_IP_LIMIT = range(17, 21)
 GET_RESTORE_LINK = range(21, 22)
 
+# --- FUNGSI DATABASE ---
 def get_db_connection():
     conn = sqlite3.connect(DB_FILE); conn.row_factory = sqlite3.Row; return conn
 
@@ -66,10 +69,13 @@ def update_user_balance(user_id: int, amount: float, transaction_type: str, desc
 
 def get_user_transactions(user_id: int, limit: int = 10) -> list:
     conn = get_db_connection(); txs = conn.cursor().execute("SELECT * FROM transactions WHERE user_id = ? ORDER BY timestamp DESC LIMIT ?", (user_id, limit)).fetchall(); conn.close(); return [dict(row) for row in txs]
+
 def get_all_transactions(limit: int = 20) -> list:
     conn = get_db_connection(); txs = conn.cursor().execute("SELECT * FROM transactions ORDER BY timestamp DESC LIMIT ?", (limit,)).fetchall(); conn.close(); return [dict(row) for row in txs]
+
 def count_all_users() -> int:
     conn = get_db_connection(); count = conn.cursor().execute("SELECT COUNT(user_id) FROM users").fetchone()[0]; conn.close(); return count
+
 def get_recent_users(limit: int = 20) -> list:
     conn = get_db_connection(); users = conn.cursor().execute("SELECT user_id, registered_at FROM users ORDER BY registered_at DESC LIMIT ?", (limit,)).fetchall(); conn.close(); return [dict(row) for row in users]
 
@@ -78,6 +84,7 @@ logger.info("Database initialized.")
 
 def is_admin(user_id: int) -> bool: return user_id in ADMIN_IDS
 
+# --- KEYBOARDS ---
 def get_main_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('🚀 SSH & OVPN')], [KeyboardButton('⚡ VMess'), KeyboardButton('🌀 VLess')], [KeyboardButton('🛡️ Trojan'), KeyboardButton('👻 Shadowsocks')], [KeyboardButton('💰 Cek Saldo Saya'), KeyboardButton('📄 Riwayat Saya')], [KeyboardButton('💳 Top Up Saldo')], [KeyboardButton('🔄 Refresh')]], resize_keyboard=True)
 def get_admin_main_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('🚀 SSH & OVPN'), KeyboardButton('⚡ VMess'), KeyboardButton('🌀 VLess')], [KeyboardButton('🛡️ Trojan'), KeyboardButton('👻 Shadowsocks')], [KeyboardButton('📈 Status Layanan'), KeyboardButton('🛠️ Pengaturan')], [KeyboardButton('👤 Manajemen User')], [KeyboardButton('💳 Top Up Saldo'), KeyboardButton('🧾 Semua Transaksi')], [KeyboardButton('🔄 Refresh')]], resize_keyboard=True)
 def get_manage_users_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('💵 Tambah Saldo'), KeyboardButton('📊 Cek Saldo User')], [KeyboardButton('📑 Riwayat User'), KeyboardButton('👑 Cek Admin & Saldo')], [KeyboardButton('👥 Jumlah User'), KeyboardButton('🆕 User Terbaru')], [KeyboardButton('🗑️ Hapus User (Soon)')], [KeyboardButton('⬅️ Kembali ke Menu Admin')]], resize_keyboard=True)
@@ -223,7 +230,36 @@ async def process_account_creation(u,c,srv,scr,params,cost,kbd):
     else: await u.message.reply_text(f"🎉 Akun {srv} Dibuat!\n<pre>{res}</pre>", reply_markup=kbd, parse_mode='HTML')
     c.user_data.clear(); return ConversationHandler.END
 
-# --- FUNGSI-FUNGSI CONVERSATION YANG HILANG SEBELUMNYA ---
+async def create_akun_ssh_start(u,c): return await start_account_creation(u,c,"SSH & OVPN",ACCOUNT_COST_IDR,SSH_OVPN_GET_USERNAME,get_ssh_ovpn_menu_keyboard())
+async def ssh_get_username(u,c): return await get_valid_username(u,c,'username',SSH_OVPN_GET_PASSWORD,"Masukkan Password:")
+async def ssh_get_password(u,c): c.user_data['password']=u.message.text; return await get_numeric_input(u,c,'expired_days',SSH_OVPN_GET_QUOTA,"Password","Masa Aktif (hari):")
+async def ssh_get_expired_days(u,c): return await get_numeric_input(u,c,'expired_days',SSH_OVPN_GET_QUOTA,"Masa Aktif","Kuota (GB):")
+async def ssh_get_quota(u,c): return await get_numeric_input(u,c,'quota',SSH_OVPN_GET_IP_LIMIT,"Kuota","Batas IP:")
+async def ssh_get_ip_limit(u,c):
+    await get_numeric_input(u,c,'ip_limit',-1,"Batas IP","")
+    params=[c.user_data['username'],c.user_data.get('password','12345'),c.user_data['expired_days'],c.user_data['quota'],c.user_data['ip_limit']]
+    return await process_account_creation(u,c,"SSH & OVPN","/usr/bin/addssh-bot",params,ACCOUNT_COST_IDR,get_ssh_ovpn_menu_keyboard())
+
+async def create_akun_vmess_start(u,c): return await start_account_creation(u,c,"VMess",ACCOUNT_COST_IDR,VMESS_GET_USERNAME,get_vmess_creation_menu_keyboard())
+async def vmess_get_username(u,c): return await get_valid_username(u,c,'username',VMESS_GET_EXPIRED_DAYS,"Masa Aktif (hari):")
+async def vmess_get_expired_days(u,c): return await get_numeric_input(u,c,'expired_days',VMESS_GET_QUOTA,"Masa Aktif","Kuota (GB):")
+async def vmess_get_quota(u,c): return await get_numeric_input(u,c,'quota',VMESS_GET_IP_LIMIT,"Kuota","Batas IP:")
+async def vmess_get_ip_limit(u,c):
+    await get_numeric_input(u,c,'ip_limit',-1,"Batas IP",""); params = [c.user_data['username'], c.user_data['expired_days'], c.user_data['quota'], c.user_data['ip_limit']]; return await process_account_creation(u,c,"VMess","/usr/bin/addws-bot",params,ACCOUNT_COST_IDR,get_vmess_creation_menu_keyboard())
+
+async def create_akun_vless_start(u,c): return await start_account_creation(u,c,"VLess",ACCOUNT_COST_IDR,VLESS_GET_USERNAME,get_vless_menu_keyboard())
+async def vless_get_username(u,c): return await get_valid_username(u,c,'username',VLESS_GET_EXPIRED_DAYS,"Masa Aktif (hari):")
+async def vless_get_expired_days(u,c): return await get_numeric_input(u,c,'expired_days',VLESS_GET_QUOTA,"Masa Aktif","Kuota (GB):")
+async def vless_get_quota(u,c): return await get_numeric_input(u,c,'quota',VLESS_GET_IP_LIMIT,"Kuota","Batas IP:")
+async def vless_get_ip_limit(u,c):
+    await get_numeric_input(u,c,'ip_limit',-1,"Batas IP",""); params = [c.user_data['username'], c.user_data['expired_days'], c.user_data['quota'], c.user_data['ip_limit']]; return await process_account_creation(u,c,"VLess","/usr/bin/addvless-bot",params,ACCOUNT_COST_IDR,get_vless_menu_keyboard())
+
+async def create_akun_shdwsk_start(u,c): return await start_account_creation(u,c,"Shadowsocks",ACCOUNT_COST_IDR,SHADOWSOCKS_GET_USERNAME,get_shadowsocks_menu_keyboard())
+async def shdwsk_get_username(u,c): return await get_valid_username(u,c,'username',SHADOWSOCKS_GET_EXPIRED_DAYS,"Masa Aktif (hari):")
+async def shdwsk_get_expired_days(u,c): return await get_numeric_input(u,c,'expired_days',SHADOWSOCKS_GET_QUOTA,"Masa Aktif","Kuota (GB):")
+async def shdwsk_get_quota(u,c):
+    await get_numeric_input(u,c,'quota',-1,"Kuota",""); params = [c.user_data['username'], c.user_data['expired_days'], c.user_data['quota']]; return await process_account_creation(u,c,"Shadowsocks","/usr/bin/addss-bot",params,ACCOUNT_COST_IDR,get_shadowsocks_menu_keyboard())
+
 async def add_balance_conversation_start(u,c):
     if not is_admin(u.effective_user.id): return ConversationHandler.END
     await u.message.reply_text(create_conversation_prompt("👤 Masukkan *User ID* target:"), parse_mode='HTML'); return ADD_BALANCE_GET_USER_ID
@@ -238,49 +274,57 @@ async def add_balance_get_amount_step(u,c):
     else: await u.message.reply_text("❌ Gagal menambah saldo.", reply_markup=get_manage_users_menu_keyboard())
     return ConversationHandler.END
 
-async def create_akun_ssh_start(u,c): return await start_account_creation(u,c,"SSH",ACCOUNT_COST_IDR,SSH_OVPN_GET_USERNAME,get_ssh_ovpn_menu_keyboard())
-async def ssh_get_username(u,c): return await get_valid_username(u,c,'username',SSH_OVPN_GET_PASSWORD,"Masukkan Password:")
-async def ssh_get_password(u,c): c.user_data['password']=u.message.text; return await get_numeric_input(u,c,'expired_days',SSH_OVPN_GET_QUOTA,"Password","Masa Aktif (hari):")
-async def ssh_get_expired_days(u,c): return await get_numeric_input(u,c,'expired_days',SSH_OVPN_GET_QUOTA,"Masa Aktif","Kuota (GB):")
-async def ssh_get_quota(u,c): return await get_numeric_input(u,c,'quota',SSH_OVPN_GET_IP_LIMIT,"Kuota","Batas IP:")
-async def ssh_get_ip_limit(u,c):
-    await get_numeric_input(u,c,'ip_limit',-1,"Batas IP","")
-    params=[c.user_data['username'],c.user_data.get('password','12345'),c.user_data['expired_days'],c.user_data['quota'],c.user_data['ip_limit']]
-    return await process_account_creation(u,c,"SSH & OVPN","/usr/bin/addssh-bot",params,ACCOUNT_COST_IDR,get_ssh_ovpn_menu_keyboard())
-# ... (Fungsi conversation steps untuk Vmess, Vless, SS, dll. akan ada di sini) ...
+async def check_user_balance_conversation_start(u,c):
+    if not is_admin(u.effective_user.id): return ConversationHandler.END
+    await u.message.reply_text(create_conversation_prompt("👤 Masukkan *User ID* yang ingin dicek:"), parse_mode='HTML'); return CHECK_BALANCE_GET_USER_ID
+async def check_user_balance_get_user_id_step(u,c):
+    if not (uid_str := u.message.text).isdigit(): await u.message.reply_text(create_conversation_prompt("⚠️ User ID tidak valid."), parse_mode='HTML'); return CHECK_BALANCE_GET_USER_ID
+    target_id = int(uid_str); balance = get_user_balance(target_id)
+    await u.message.reply_text(f"📊 Saldo user <code>{target_id}</code>: <b>Rp {balance:,.0f},-</b>", parse_mode='HTML', reply_markup=get_manage_users_menu_keyboard()); return ConversationHandler.END
+
+async def view_user_tx_conversation_start(u,c):
+    if not is_admin(u.effective_user.id): return ConversationHandler.END
+    await u.message.reply_text(create_conversation_prompt("👤 Masukkan *User ID* untuk lihat riwayat:"), parse_mode='HTML'); return VIEW_USER_TX_GET_USER_ID
+async def view_user_tx_get_user_id_step(u,c):
+    if not (uid_str := u.message.text).isdigit(): await u.message.reply_text(create_conversation_prompt("⚠️ User ID tidak valid."), parse_mode='HTML'); return VIEW_USER_TX_GET_USER_ID
+    target_id = int(uid_str); txs = get_user_transactions(target_id)
+    msg = f"📑 Riwayat Transaksi User {target_id}:\n\n" + "\n".join([f"<b>{'🟢 +' if tx['amount'] >= 0 else '🔴'} Rp {abs(tx['amount']):,.0f}</b> - <i>{tx['type'].replace('_', ' ').title()}</i>" for tx in txs]) if txs else f"📂 Riwayat user <code>{target_id}</code> kosong."
+    await u.message.reply_text(msg, parse_mode='HTML', reply_markup=get_manage_users_menu_keyboard()); return ConversationHandler.END
 
 async def restore_vps_start(u,c):
     if not is_admin(u.effective_user.id): return ConversationHandler.END
-    warning_text = "⚠️ *PERINGATAN!* ⚠️\nProses ini akan menimpa data. Tidak bisa dibatalkan.\n\nKirimkan **link download** file `backup.zip` Anda."
-    await u.message.reply_text(create_conversation_prompt(warning_text), parse_mode='HTML'); return GET_RESTORE_LINK
+    await u.message.reply_text(create_conversation_prompt("⚠️ *PERINGATAN!* ⚠️\nProses ini akan menimpa data.\n\nKirimkan **link download** `backup.zip`:"), parse_mode='HTML'); return GET_RESTORE_LINK
 async def get_restore_link_and_run(u,c):
     link = u.message.text
     if not link or not link.startswith('http'): await u.message.reply_text("❌ Link tidak valid.", reply_markup=get_settings_menu_keyboard()); return ConversationHandler.END
     await u.message.reply_text("⏳ *Memulai restore...*", parse_mode='HTML')
     result = await run_ssh_command(f"bash /usr/bin/bot-restore '{link}'")
-    await u.message.reply_text(f"✅ *Hasil Restore:*\n<pre>{result}</pre>", parse_mode='HTML', reply_markup=get_admin_main_menu_keyboard())
-    return ConversationHandler.END
+    await u.message.reply_text(f"✅ *Hasil Restore:*\n<pre>{result}</pre>", parse_mode='HTML', reply_markup=get_admin_main_menu_keyboard()); return ConversationHandler.END
 
 def main() -> None:
     logger.info("Bot is starting...")
     if not all([BOT_TOKEN, SSH_USERNAME, SSH_PASSWORD]): logger.critical("Konfigurasi bot tidak lengkap."); exit(1)
+    
     application = Application.builder().token(BOT_TOKEN).build()
     cancel_handler = CommandHandler("cancel", cancel_conversation)
     
-    # CONVERSATION HANDLERS (DEFINISI LENGKAP DAN BENAR)
-    ssh_conv = ConversationHandler(entry_points=[MessageHandler(filters.Regex(r'^➕ Buat Akun SSH Premium$'), create_akun_ssh_start)], states={SSH_OVPN_GET_USERNAME:[MessageHandler(filters.TEXT&~filters.COMMAND, ssh_get_username)], SSH_OVPN_GET_PASSWORD:[MessageHandler(filters.TEXT&~filters.COMMAND, ssh_get_password)], SSH_OVPN_GET_EXPIRED_DAYS:[MessageHandler(filters.TEXT&~filters.COMMAND, ssh_get_expired_days)], SSH_OVPN_GET_QUOTA:[MessageHandler(filters.TEXT&~filters.COMMAND, ssh_get_quota)], SSH_OVPN_GET_IP_LIMIT:[MessageHandler(filters.TEXT&~filters.COMMAND, ssh_get_ip_limit)]}, fallbacks=[cancel_handler], allow_reentry=True)
-    add_balance_conv = ConversationHandler(entry_points=[MessageHandler(filters.Regex(r'^💵 Tambah Saldo$'), add_balance_conversation_start)], states={ADD_BALANCE_GET_USER_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_balance_get_user_id_step)], ADD_BALANCE_GET_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_balance_get_amount_step)]}, fallbacks=[cancel_handler])
-    restore_conv = ConversationHandler(entry_points=[MessageHandler(filters.Regex(r'^🔄 Restore VPS$'), restore_vps_start)], states={GET_RESTORE_LINK: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_restore_link_and_run)]}, fallbacks=[cancel_handler])
-    # (Di sini seharusnya ada definisi conv handler untuk vmess, vless, ss, check balance, dll)
-
-    application.add_handler(ssh_conv)
-    application.add_handler(add_balance_conv)
-    application.add_handler(restore_conv)
-    # (Di sini seharusnya ada application.add_handler untuk semua conv handler lainnya)
-
-    # MESSAGE & COMMAND HANDLERS
+    # --- PENDAFTARAN SEMUA HANDLER ---
+    conv_handlers = [
+        ConversationHandler(entry_points=[MessageHandler(filters.Regex(r'^➕ Buat Akun SSH Premium$'), create_akun_ssh_start)], states={SSH_OVPN_GET_USERNAME:[MessageHandler(filters.TEXT&~filters.COMMAND, ssh_get_username)], SSH_OVPN_GET_PASSWORD:[MessageHandler(filters.TEXT&~filters.COMMAND, ssh_get_password)], SSH_OVPN_GET_EXPIRED_DAYS:[MessageHandler(filters.TEXT&~filters.COMMAND, ssh_get_expired_days)], SSH_OVPN_GET_QUOTA:[MessageHandler(filters.TEXT&~filters.COMMAND, ssh_get_quota)], SSH_OVPN_GET_IP_LIMIT:[MessageHandler(filters.TEXT&~filters.COMMAND, ssh_get_ip_limit)]}, fallbacks=[cancel_handler]),
+        ConversationHandler(entry_points=[MessageHandler(filters.Regex(r'^➕ Buat Akun VMess Premium$'), create_akun_vmess_start)], states={VMESS_GET_USERNAME:[MessageHandler(filters.TEXT&~filters.COMMAND, vmess_get_username)], VMESS_GET_EXPIRED_DAYS:[MessageHandler(filters.TEXT&~filters.COMMAND, vmess_get_expired_days)], VMESS_GET_QUOTA:[MessageHandler(filters.TEXT&~filters.COMMAND, vmess_get_quota)], VMESS_GET_IP_LIMIT:[MessageHandler(filters.TEXT&~filters.COMMAND, vmess_get_ip_limit)]}, fallbacks=[cancel_handler]),
+        ConversationHandler(entry_points=[MessageHandler(filters.Regex(r'^➕ Buat Akun VLess Premium$'), create_akun_vless_start)], states={VLESS_GET_USERNAME:[MessageHandler(filters.TEXT&~filters.COMMAND, vless_get_username)], VLESS_GET_EXPIRED_DAYS:[MessageHandler(filters.TEXT&~filters.COMMAND, vless_get_expired_days)], VLESS_GET_QUOTA:[MessageHandler(filters.TEXT&~filters.COMMAND, vless_get_quota)], VLESS_GET_IP_LIMIT:[MessageHandler(filters.TEXT&~filters.COMMAND, vless_get_ip_limit)]}, fallbacks=[cancel_handler]),
+        ConversationHandler(entry_points=[MessageHandler(filters.Regex(r'^➕ Buat Akun Shadowsocks$'), create_akun_shdwsk_start)], states={SHADOWSOCKS_GET_USERNAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, shdwsk_get_username)], SHADOWSOCKS_GET_EXPIRED_DAYS: [MessageHandler(filters.TEXT & ~filters.COMMAND, shdwsk_get_expired_days)], SHADOWSOCKS_GET_QUOTA: [MessageHandler(filters.TEXT & ~filters.COMMAND, shdwsk_get_quota)]}, fallbacks=[cancel_handler]),
+        ConversationHandler(entry_points=[MessageHandler(filters.Regex(r'^💵 Tambah Saldo$'), add_balance_conversation_start)], states={ADD_BALANCE_GET_USER_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_balance_get_user_id_step)], ADD_BALANCE_GET_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_balance_get_amount_step)]}, fallbacks=[cancel_handler]),
+        ConversationHandler(entry_points=[MessageHandler(filters.Regex(r'^📊 Cek Saldo User$'), check_user_balance_conversation_start)], states={CHECK_BALANCE_GET_USER_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, check_user_balance_get_user_id_step)]}, fallbacks=[cancel_handler]),
+        ConversationHandler(entry_points=[MessageHandler(filters.Regex(r'^📑 Riwayat User$'), view_user_tx_conversation_start)], states={VIEW_USER_TX_GET_USER_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, view_user_tx_get_user_id_step)]}, fallbacks=[cancel_handler]),
+        ConversationHandler(entry_points=[MessageHandler(filters.Regex(r'^🔄 Restore VPS$'), restore_vps_start)], states={GET_RESTORE_LINK: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_restore_link_and_run)]}, fallbacks=[cancel_handler])
+    ]
+    application.add_handlers(conv_handlers)
+    
     application.add_handler(CommandHandler("start", start))
-    handlers = {
+    application.add_handler(CommandHandler("menu", show_menu))
+
+    message_handlers = {
         r'^🚀 SSH & OVPN$': menu_ssh_ovpn_main, r'^⚡ VMess$': menu_vmess_main,
         r'^🌀 VLess$': menu_vless_main, r'^🛡️ Trojan$': menu_trojan_main,
         r'^👻 Shadowsocks$': menu_shdwsk_main, r'^⬅️ Kembali': back_to_main_menu,
@@ -299,8 +343,9 @@ def main() -> None:
         r'^👥 Jumlah User$': total_users_handler,
         r'^🆕 User Terbaru$': recent_users_handler,
         r'^👁️ Cek Koneksi Aktif$': check_connections_handler,
+        r'^🧾 Semua Transaksi$': view_all_transactions_admin_handler
     }
-    for regex, func in handlers.items():
+    for regex, func in message_handlers.items():
         application.add_handler(MessageHandler(filters.Regex(regex), func))
 
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, unknown))
