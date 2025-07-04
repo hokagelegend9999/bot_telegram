@@ -1,54 +1,19 @@
 #!/bin/bash
-
 # Skrip aman untuk menghapus user VLESS menggunakan jq
 
-if [ -z "$1" ]; then
-    echo "Error: Username tidak diberikan."
-    exit 1
-fi
-
+if [ -z "$1" ]; then exit 1; fi
 user="$1"
 DB_FILE="/etc/vless/.vless.db"
 CONFIG_FILE="/etc/xray/config.json"
+TMP_FILE="/tmp/config.json.tmp"
 
-# Cek apakah user ada di database teks
-if ! grep -q -w "$user" "$DB_FILE"; then
-    echo "❌ Gagal: User '$user' tidak ditemukan di database."
-    exit 1
-fi
-
-# Ambil UUID user yang akan dihapus
+if ! grep -q -w "$user" "$DB_FILE"; then exit 1; fi
 uuid_to_delete=$(grep -w "$user" "$DB_FILE" | awk '{print $3}')
+if [ -z "$uuid_to_delete" ]; then exit 1; fi
 
-if [ -z "$uuid_to_delete" ]; then
-    echo "❌ Gagal: Tidak dapat menemukan UUID untuk user '$user'."
-    exit 1
-fi
+# Hapus dari semua inbound VLESS
+jq '(.inbounds[]? | select(.protocol=="vless").settings.clients) |= map(select(.id != "'$uuid_to_delete'"))' "$CONFIG_FILE" > "$TMP_FILE" && mv "$TMP_FILE" "$CONFIG_FILE"
 
-# Hapus user dari config.json menggunakan jq
-# Ini akan menghapus entri klien yang memiliki 'id' yang cocok
-jq '(.inbounds[]? | select(.protocol=="vless") | .settings.clients) |= map(select(.id != "'$uuid_to_delete'"))' "$CONFIG_FILE" > "${CONFIG_FILE}.tmp"
-
-# Timpa file config lama dengan yang baru jika jq berhasil
-if [ $? -eq 0 ]; then
-    mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE"
-else
-    echo "❌ Gagal memproses config.json dengan jq."
-    rm -f "${CONFIG_FILE}.tmp"
-    exit 1
-fi
-
-# Hapus dari database teks .vless.db
 sed -i "/\b$user\b/d" "$DB_FILE"
-
-# Hapus file limit (jika ada)
-if [ -f "/etc/vless/$user" ]; then
-    rm -f "/etc/vless/$user"
-fi
-
-# Restart Xray menggunakan skrip perantara
 systemctl restart xray
-
-echo "✅ User VLESS '$user' berhasil dihapus."
-
 exit 0
