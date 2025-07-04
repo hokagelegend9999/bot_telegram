@@ -7,6 +7,7 @@ import datetime as DT
 import os
 import paramiko
 import asyncio
+import httpx
 
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InputFile
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters, ConversationHandler
@@ -18,11 +19,11 @@ logger = logging.getLogger(__name__)
 
 # --- KONFIGURASI ---
 BOT_TOKEN = '7948291780:AAGMIaOD1cS2l_SZZq6DejAU14VlAWu-sDU'
-ADMIN_IDS = [1469244768, 987654321]
+ADMIN_IDS = [1234567890]
 DB_FILE = '/usr/bin/jualan.db'
 SSH_HOST = "127.0.0.1"
 SSH_USERNAME = os.getenv("SSH_USERNAME", "root")
-SSH_PASSWORD = os.getenv("SSH_PASSWORD", "")
+SSH_PASSWORD = os.getenv("SSH_PASSWORD", "hokage")
 SSH_PORT = 2269
 ACCOUNT_COST_IDR = 10000.0
 QRIS_IMAGE_PATH = "/usr/bin/qris.jpg"
@@ -31,28 +32,28 @@ TELEGRAM_ADMIN_USERNAME = "HookageLegend"
 TRIAL_COOLDOWN_HOURS = 24
 
 # --- STATES UNTUK CONVERSATIONS ---
-VMESS_GET_USERNAME, VMESS_GET_EXPIRED_DAYS, VMESS_GET_QUOTA, VMESS_GET_IP_LIMIT = range(4)
-SHADOWSOCKS_GET_USERNAME, SHADOWSOCKS_GET_EXPIRED_DAYS, SHADOWSOCKS_GET_QUOTA = range(4, 7)
-SSH_OVPN_GET_USERNAME, SSH_OVPN_GET_PASSWORD, SSH_OVPN_GET_EXPIRED_DAYS, SSH_OVPN_GET_QUOTA, SSH_OVPN_GET_IP_LIMIT = range(7, 12)
-ADD_BALANCE_GET_USER_ID, ADD_BALANCE_GET_AMOUNT = range(12, 14)
-CHECK_BALANCE_GET_USER_ID = range(14, 15)
-VIEW_USER_TX_GET_USER_ID = range(15, 16)
-SETTINGS_MENU = range(16, 17)
-VLESS_GET_USERNAME, VLESS_GET_EXPIRED_DAYS, VLESS_GET_QUOTA, VLESS_GET_IP_LIMIT = range(17, 21)
-GET_RESTORE_LINK = range(21, 22)
-GET_SSH_USER_TO_DELETE, GET_TROJAN_USER_TO_DELETE, GET_VLESS_USER_TO_DELETE, GET_VMESS_USER_TO_DELETE, GET_SHADOWSOCKS_USER_TO_DELETE = range(22, 27)
+(VMESS_GET_USERNAME, VMESS_GET_EXPIRED_DAYS, VMESS_GET_QUOTA, VMESS_GET_IP_LIMIT,
+ SHADOWSOCKS_GET_USERNAME, SHADOWSOCKS_GET_EXPIRED_DAYS, SHADOWSOCKS_GET_QUOTA,
+ SSH_OVPN_GET_USERNAME, SSH_OVPN_GET_PASSWORD, SSH_OVPN_GET_EXPIRED_DAYS, SSH_OVPN_GET_QUOTA, SSH_OVPN_GET_IP_LIMIT,
+ ADD_BALANCE_GET_USER_ID, ADD_BALANCE_GET_AMOUNT,
+ CHECK_BALANCE_GET_USER_ID,
+ VIEW_USER_TX_GET_USER_ID,
+ SETTINGS_MENU,
+ VLESS_GET_USERNAME, VLESS_GET_EXPIRED_DAYS, VLESS_GET_QUOTA, VLESS_GET_IP_LIMIT,
+ GET_RESTORE_LINK,
+ GET_SSH_USER_TO_DELETE, GET_TROJAN_USER_TO_DELETE, GET_VLESS_USER_TO_DELETE,
+ GET_VMESS_USER_TO_DELETE, GET_SHADOWSOCKS_USER_TO_DELETE) = range(27)
 
 # --- FUNGSI DATABASE ---
 def get_db_connection(): conn = sqlite3.connect(DB_FILE); conn.row_factory = sqlite3.Row; return conn
 def migrate_db():
     conn = get_db_connection()
-    cursor = conn.cursor()
     try:
+        cursor = conn.cursor()
         cursor.execute("PRAGMA table_info(users)")
         columns = [info[1] for info in cursor.fetchall()]
         if 'last_trial_at' not in columns:
             cursor.execute("ALTER TABLE users ADD COLUMN last_trial_at TEXT")
-            logger.info("Kolom 'last_trial_at' berhasil ditambahkan ke tabel users.")
         conn.commit()
     except sqlite3.Error as e: logger.error(f"Gagal migrasi database: {e}")
     finally: conn.close()
@@ -85,7 +86,7 @@ def is_admin(user_id: int) -> bool: return user_id in ADMIN_IDS
 # --- KEYBOARDS ---
 def get_main_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('🚀 SSH & OVPN')], [KeyboardButton('⚡ VMess'), KeyboardButton('🌀 VLess')], [KeyboardButton('🛡️ Trojan'), KeyboardButton('👻 Shadowsocks')], [KeyboardButton('💰 Cek Saldo Saya'), KeyboardButton('📄 Riwayat Saya')], [KeyboardButton('💳 Top Up Saldo')], [KeyboardButton('🔄 Refresh')]], resize_keyboard=True)
 def get_admin_main_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('🚀 SSH & OVPN'), KeyboardButton('⚡ VMess'), KeyboardButton('🌀 VLess')], [KeyboardButton('🛡️ Trojan'), KeyboardButton('👻 Shadowsocks')], [KeyboardButton('📈 Status Layanan'), KeyboardButton('🛠️ Pengaturan')], [KeyboardButton('👤 Manajemen User')], [KeyboardButton('💳 Top Up Saldo'), KeyboardButton('🧾 Semua Transaksi')], [KeyboardButton('🔄 Refresh')]], resize_keyboard=True)
-def get_manage_users_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('💵 Tambah Saldo'), KeyboardButton('📊 Cek Saldo User')], [KeyboardButton('📑 Riwayat User'), KeyboardButton('👑 Cek Admin & Saldo')], [KeyboardButton('👥 Jumlah User'), KeyboardButton('🆕 User Terbaru')], [KeyboardButton('🗑️ Hapus User (Soon)')], [KeyboardButton('⬅️ Kembali ke Menu Admin')]], resize_keyboard=True)
+def get_manage_users_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('💵 Tambah Saldo'), KeyboardButton('📊 Cek Saldo User')], [KeyboardButton('📑 Riwayat User'), KeyboardButton('👑 Cek Admin & Saldo')], [KeyboardButton('👥 Jumlah User'), KeyboardButton('🆕 User Terbaru')], [KeyboardButton('🗑️ Hapus User')], [KeyboardButton('⬅️ Kembali ke Menu Admin')]], resize_keyboard=True)
 def get_settings_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('💾 Backup VPS'), KeyboardButton('🔄 Restore VPS')], [KeyboardButton('👁️ Cek Koneksi Aktif'), KeyboardButton('🔄 Restart Layanan')], [KeyboardButton('🧹 Clear Cache')], [KeyboardButton('⚙️ Pengaturan Lain (Soon)')], [KeyboardButton('⬅️ Kembali ke Menu Admin')]], resize_keyboard=True)
 def get_ssh_ovpn_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('➕ Buat Akun SSH Premium'), KeyboardButton('🗑️ Hapus Akun SSH')], [KeyboardButton('🆓 Coba Gratis SSH & OVPN')], [KeyboardButton('ℹ️ Info Layanan SSH')], [KeyboardButton('⬅️ Kembali')]], resize_keyboard=True)
 def get_vmess_creation_menu_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton('➕ Buat Akun VMess Premium'), KeyboardButton('🗑️ Hapus Akun VMess')], [KeyboardButton('🆓 Coba Gratis VMess')], [KeyboardButton('📊 Cek Layanan VMess')], [KeyboardButton('⬅️ Kembali')]], resize_keyboard=True)
@@ -111,7 +112,7 @@ async def run_ssh_command(command: str):
         return f"💥 <b>Koneksi SSH Gagal!</b> Hubungi admin.\n<pre>{e}</pre>"
     finally:
         if client: client.close()
-            async def check_and_handle_trial(update: Update, context: ContextTypes.DEFAULT_TYPE, script_path: str, loading_text: str, error_text: str, return_keyboard: ReplyKeyboardMarkup) -> None:
+async def check_and_handle_trial(update: Update, context: ContextTypes.DEFAULT_TYPE, script_path: str, loading_text: str, error_text: str, return_keyboard: ReplyKeyboardMarkup) -> None:
     user_id = update.effective_user.id
     if is_admin(user_id):
         await handle_general_script_button(update, context, script_path, loading_text, error_text, return_keyboard)
@@ -145,10 +146,9 @@ async def run_ssh_command(command: str):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id, user_name = update.effective_user.id, update.effective_user.first_name
     conn = get_db_connection()
-    cursor = conn.cursor()
-    if not cursor.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,)).fetchone():
+    if not conn.cursor().execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,)).fetchone():
         ts = DT.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        cursor.execute("INSERT INTO users (user_id, balance, registered_at, last_trial_at) VALUES (?, ?, ?, NULL)", (user_id, 0.0, ts))
+        conn.cursor().execute("INSERT INTO users (user_id, balance, registered_at, last_trial_at) VALUES (?, ?, ?, NULL)", (user_id, 0.0, ts))
         conn.commit()
         msg = f"🎉 Halo, <b>{user_name}</b>! Selamat datang & selamat terdaftar."
     else: msg = f"👋 Selamat datang kembali, <b>{user_name}</b>!"
@@ -167,6 +167,8 @@ async def unknown(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     keyboard = get_admin_main_menu_keyboard() if is_admin(update.effective_user.id) else get_main_menu_keyboard()
     await update.message.reply_text('🤔 Perintah tidak dikenali.', reply_markup=keyboard)
 async def handle_general_script_button(update: Update, context: ContextTypes.DEFAULT_TYPE, script: str, loading: str, error: str, keyboard: ReplyKeyboardMarkup) -> None:
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("🚫 Perintah ini hanya untuk Admin."); return
     await update.message.reply_text(f"⏳ *{loading}*", parse_mode='HTML')
     result = await run_ssh_command(f"bash {script}")
     if "Error:" in result or "Terjadi Kesalahan" in result:
@@ -194,7 +196,6 @@ async def topup_saldo_handler(u,c):
                f"   🏦 <b>Bank:</b> [NAMA BANK ANDA]\n"
                f"   💳 <b>No. Rekening:</b> [NOMOR REKENING ANDA]\n"
                f"   👤 <b>Atas Nama:</b> [ATAS NAMA PEMILIK REK.]\n\n"
-               f"2. Sertakan nominal unik jika memungkinkan untuk mempercepat proses (contoh: Rp 50.123).\n\n"
                f"<b><u>Setelah Transfer:</u></b>\n"
                f"Mohon kirim bukti transfer beserta User ID Telegram Anda di bawah ini untuk konfirmasi:\n"
                f"<code>{user_id}</code> (klik untuk salin)\n\n"
@@ -206,8 +207,7 @@ async def topup_saldo_handler(u,c):
     if os.path.exists(QRIS_IMAGE_PATH):
         try:
             with open(QRIS_IMAGE_PATH, 'rb') as photo: await u.message.reply_photo(photo=photo, caption=caption, parse_mode='HTML', reply_markup=keyboard)
-        except Exception as e:
-            logger.error(f"Gagal mengirim foto QRIS: {e}"); await u.message.reply_text(f"Gagal memuat gambar QRIS.\n\n{caption}", parse_mode='HTML', reply_markup=keyboard)
+        except Exception as e: logger.error(f"Gagal mengirim foto QRIS: {e}"); await u.message.reply_text(f"Gagal memuat gambar QRIS.\n\n{caption}", parse_mode='HTML', reply_markup=keyboard)
     else: await u.message.reply_text(caption, parse_mode='HTML', reply_markup=keyboard)
 
 async def check_balance_user_handler(u,c): await u.message.reply_text(f"💰 Saldo Anda: <b>Rp {get_user_balance(u.effective_user.id):,.0f}</b>", parse_mode='HTML')
@@ -260,7 +260,6 @@ async def view_all_transactions_admin_handler(u,c):
     txs = get_all_transactions()
     msg = "🧾 *20 Transaksi Terbaru*\n\n" + "".join([f"👤 <code>{tx['user_id']}</code>: {'🟢 +' if tx['amount'] >= 0 else '🔴'}<b>Rp {abs(tx['amount']):,.0f}</b>\n<i>({tx['type'].replace('_', ' ').title()})</i>\n" for tx in txs]) if txs else "📂 Belum ada transaksi."
     await u.message.reply_text(msg, parse_mode='HTML', reply_markup=get_admin_main_menu_keyboard())
-
 def create_conversation_prompt(prompt_text: str) -> str: return f"{prompt_text}\n\n<i>Ketik /cancel untuk batal.</i>"
 async def start_account_creation(u,c,srv,cost,next_st,kbd):
     user_id = u.effective_user.id
@@ -289,7 +288,6 @@ async def process_account_creation(u,c,srv,scr,params,cost,kbd):
         else: await u.message.reply_text(f"❌ Gagal (Admin)!\n{res}", reply_markup=kbd, parse_mode='HTML')
     else: await u.message.reply_text(f"🎉 Akun {srv} Dibuat!\n<pre>{res}</pre>", reply_markup=kbd, parse_mode='HTML')
     c.user_data.clear(); return ConversationHandler.END
-
 async def create_akun_ssh_start(u,c): return await start_account_creation(u,c,"SSH & OVPN",ACCOUNT_COST_IDR,SSH_OVPN_GET_USERNAME,get_ssh_ovpn_menu_keyboard())
 async def ssh_get_username(u,c): return await get_valid_username(u,c,'username',SSH_OVPN_GET_PASSWORD,"Masukkan Password:")
 async def ssh_get_password(u,c): c.user_data['password']=u.message.text; return await get_numeric_input(u,c,'expired_days',SSH_OVPN_GET_EXPIRED_DAYS,"Password","Masa Aktif (hari):")
@@ -328,8 +326,7 @@ async def check_user_balance_conversation_start(u,c):
     await u.message.reply_text(create_conversation_prompt("👤 Masukkan *User ID* yang ingin dicek:"), parse_mode='HTML'); return CHECK_BALANCE_GET_USER_ID
 async def check_user_balance_get_user_id_step(u,c):
     if not (uid_str := u.message.text).isdigit(): await u.message.reply_text(create_conversation_prompt("⚠️ User ID tidak valid."), parse_mode='HTML'); return CHECK_BALANCE_GET_USER_ID
-    target_id = int(uid_str)
-    await u.message.reply_text(f"📊 Saldo user <code>{target_id}</code>: <b>Rp {get_user_balance(target_id):,.0f},-</b>", parse_mode='HTML', reply_markup=get_manage_users_menu_keyboard()); return ConversationHandler.END
+    target_id = int(uid_str); await u.message.reply_text(f"📊 Saldo user <code>{target_id}</code>: <b>Rp {get_user_balance(target_id):,.0f},-</b>", parse_mode='HTML', reply_markup=get_manage_users_menu_keyboard()); return ConversationHandler.END
 async def view_user_tx_conversation_start(u,c):
     if not is_admin(u.effective_user.id): return ConversationHandler.END
     await u.message.reply_text(create_conversation_prompt("👤 Masukkan *User ID* untuk lihat riwayat:"), parse_mode='HTML'); return VIEW_USER_TX_GET_USER_ID
@@ -349,8 +346,7 @@ async def get_restore_link_and_run(u,c):
     await u.message.reply_text(f"✅ *Hasil Restore:*\n<pre>{result}</pre>", parse_mode='HTML', reply_markup=get_admin_main_menu_keyboard()); return ConversationHandler.END
 async def delete_ssh_start(u,c):
     if not is_admin(u.effective_user.id): return ConversationHandler.END
-    user_list = await run_ssh_command("bash /usr/bin/bot-list-ssh")
-    await u.message.reply_text(f"<pre>{user_list}</pre>\n\n" + create_conversation_prompt("👆 Ketik *Username* yang ingin dihapus:"), parse_mode='HTML'); return GET_SSH_USER_TO_DELETE
+    user_list = await run_ssh_command("bash /usr/bin/bot-list-ssh"); await u.message.reply_text(f"<pre>{user_list}</pre>\n\n" + create_conversation_prompt("👆 Ketik *Username* yang ingin dihapus:"), parse_mode='HTML'); return GET_SSH_USER_TO_DELETE
 async def delete_ssh_get_user(u,c):
     username = u.message.text.strip()
     if not username: await u.message.reply_text("Username kosong.", reply_markup=get_ssh_ovpn_menu_keyboard()); return ConversationHandler.END
@@ -358,8 +354,7 @@ async def delete_ssh_get_user(u,c):
     await u.message.reply_text(result, reply_markup=get_ssh_ovpn_menu_keyboard()); return ConversationHandler.END
 async def delete_trojan_start(u,c):
     if not is_admin(u.effective_user.id): return ConversationHandler.END
-    user_list = await run_ssh_command("bash /usr/bin/bot-list-trojan")
-    await u.message.reply_text(f"<pre>{user_list}</pre>\n\n" + create_conversation_prompt("👆 Ketik *Username* yang ingin dihapus:"), parse_mode='HTML'); return GET_TROJAN_USER_TO_DELETE
+    user_list = await run_ssh_command("bash /usr/bin/bot-list-trojan"); await u.message.reply_text(f"<pre>{user_list}</pre>\n\n" + create_conversation_prompt("👆 Ketik *Username* yang ingin dihapus:"), parse_mode='HTML'); return GET_TROJAN_USER_TO_DELETE
 async def delete_trojan_get_user(u,c):
     username = u.message.text.strip()
     if not username: await u.message.reply_text("Username kosong.", reply_markup=get_trojan_menu_keyboard()); return ConversationHandler.END
@@ -367,8 +362,7 @@ async def delete_trojan_get_user(u,c):
     await u.message.reply_text(result, reply_markup=get_trojan_menu_keyboard()); return ConversationHandler.END
 async def delete_vless_start(u,c):
     if not is_admin(u.effective_user.id): return ConversationHandler.END
-    user_list = await run_ssh_command("bash /usr/bin/bot-list-vless")
-    await u.message.reply_text(f"<pre>{user_list}</pre>\n\n" + create_conversation_prompt("👆 Ketik *Username* yang ingin dihapus:"), parse_mode='HTML'); return GET_VLESS_USER_TO_DELETE
+    user_list = await run_ssh_command("bash /usr/bin/bot-list-vless"); await u.message.reply_text(f"<pre>{user_list}</pre>\n\n" + create_conversation_prompt("👆 Ketik *Username* yang ingin dihapus:"), parse_mode='HTML'); return GET_VLESS_USER_TO_DELETE
 async def delete_vless_get_user(u,c):
     username = u.message.text.strip()
     if not username: await u.message.reply_text("Username kosong.", reply_markup=get_vless_menu_keyboard()); return ConversationHandler.END
@@ -376,8 +370,7 @@ async def delete_vless_get_user(u,c):
     await u.message.reply_text(result, reply_markup=get_vless_menu_keyboard()); return ConversationHandler.END
 async def delete_vmess_start(u,c):
     if not is_admin(u.effective_user.id): return ConversationHandler.END
-    user_list = await run_ssh_command("bash /usr/bin/bot-list-vmess")
-    await u.message.reply_text(f"<pre>{user_list}</pre>\n\n" + create_conversation_prompt("👆 Ketik *Username* yang ingin dihapus:"), parse_mode='HTML'); return GET_VMESS_USER_TO_DELETE
+    user_list = await run_ssh_command("bash /usr/bin/bot-list-vmess"); await u.message.reply_text(f"<pre>{user_list}</pre>\n\n" + create_conversation_prompt("👆 Ketik *Username* yang ingin dihapus:"), parse_mode='HTML'); return GET_VMESS_USER_TO_DELETE
 async def delete_vmess_get_user(u,c):
     username = u.message.text.strip()
     if not username: await u.message.reply_text("Username kosong.", reply_markup=get_vmess_creation_menu_keyboard()); return ConversationHandler.END
@@ -385,8 +378,7 @@ async def delete_vmess_get_user(u,c):
     await u.message.reply_text(result, reply_markup=get_vmess_creation_menu_keyboard()); return ConversationHandler.END
 async def delete_shadowsocks_start(u,c):
     if not is_admin(u.effective_user.id): return ConversationHandler.END
-    user_list = await run_ssh_command("bash /usr/bin/bot-list-shadowsocks")
-    await u.message.reply_text(f"<pre>{user_list}</pre>\n\n" + create_conversation_prompt("👆 Ketik *Username* yang ingin dihapus:"), parse_mode='HTML'); return GET_SHADOWSOCKS_USER_TO_DELETE
+    user_list = await run_ssh_command("bash /usr/bin/bot-list-shadowsocks"); await u.message.reply_text(f"<pre>{user_list}</pre>\n\n" + create_conversation_prompt("👆 Ketik *Username* yang ingin dihapus:"), parse_mode='HTML'); return GET_SHADOWSOCKS_USER_TO_DELETE
 async def delete_shadowsocks_get_user(u,c):
     username = u.message.text.strip()
     if not username: await u.message.reply_text("Username kosong.", reply_markup=get_shadowsocks_menu_keyboard()); return ConversationHandler.END
@@ -394,10 +386,14 @@ async def delete_shadowsocks_get_user(u,c):
     await u.message.reply_text(result, reply_markup=get_shadowsocks_menu_keyboard()); return ConversationHandler.END
 
 def main() -> None:
-    logger.info("Bot is starting...")
-    if not all([BOT_TOKEN, SSH_USERNAME, SSH_PASSWORD]): logger.critical("Konfigurasi bot tidak lengkap."); exit(1)
     application = Application.builder().token(BOT_TOKEN).build()
+
+    # job_queue = application.job_queue
+    # if job_queue:
+    #     job_queue.run_repeating(periodic_license_check, interval=DT.timedelta(hours=LICENSE_CHECK_INTERVAL_HOURS))
+
     cancel_handler = CommandHandler("cancel", cancel_conversation)
+
     conv_handlers = [
         ConversationHandler(entry_points=[MessageHandler(filters.Regex(r'Buat Akun SSH Premium$'), create_akun_ssh_start)], states={SSH_OVPN_GET_USERNAME:[MessageHandler(filters.TEXT&~filters.COMMAND, ssh_get_username)], SSH_OVPN_GET_PASSWORD:[MessageHandler(filters.TEXT&~filters.COMMAND, ssh_get_password)], SSH_OVPN_GET_EXPIRED_DAYS:[MessageHandler(filters.TEXT&~filters.COMMAND, ssh_get_expired_days)], SSH_OVPN_GET_QUOTA:[MessageHandler(filters.TEXT&~filters.COMMAND, ssh_get_quota)], SSH_OVPN_GET_IP_LIMIT:[MessageHandler(filters.TEXT&~filters.COMMAND, ssh_get_ip_limit)]}, fallbacks=[cancel_handler]),
         ConversationHandler(entry_points=[MessageHandler(filters.Regex(r'Buat Akun VMess Premium$'), create_akun_vmess_start)], states={VMESS_GET_USERNAME:[MessageHandler(filters.TEXT&~filters.COMMAND, vmess_get_username)], VMESS_GET_EXPIRED_DAYS:[MessageHandler(filters.TEXT&~filters.COMMAND, vmess_get_expired_days)], VMESS_GET_QUOTA:[MessageHandler(filters.TEXT&~filters.COMMAND, vmess_get_quota)], VMESS_GET_IP_LIMIT:[MessageHandler(filters.TEXT&~filters.COMMAND, vmess_get_ip_limit)]}, fallbacks=[cancel_handler]),
@@ -414,7 +410,10 @@ def main() -> None:
         ConversationHandler(entry_points=[MessageHandler(filters.Regex(r'Hapus Akun Shadowsocks$'), delete_shadowsocks_start)], states={GET_SHADOWSOCKS_USER_TO_DELETE: [MessageHandler(filters.TEXT & ~filters.COMMAND, delete_shadowsocks_get_user)]}, fallbacks=[cancel_handler]),
     ]
     application.add_handlers(conv_handlers)
-    application.add_handler(CommandHandler("start", start)); application.add_handler(CommandHandler("menu", show_menu))
+
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("menu", show_menu))
+
     message_handlers = {
         r'^🚀 SSH & OVPN$': menu_ssh_ovpn_main, r'^⚡ VMess$': menu_vmess_main,
         r'^🌀 VLess$': menu_vless_main, r'^🛡️ Trojan$': menu_trojan_main,
@@ -443,9 +442,11 @@ def main() -> None:
         r'^📊 Cek Layanan Shadowsocks$': check_shadowsocks_service_handler
     }
     for regex, func in message_handlers.items(): application.add_handler(MessageHandler(filters.Regex(regex), func))
+
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, unknown))
+
     logger.info("Bot is running...")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    application.run_polling()
 
 if __name__ == "__main__":
     main()
