@@ -189,13 +189,13 @@ async def create_trial_vmess_handler(u,c): await check_and_handle_trial(u,c,'/us
 async def create_trial_shdwsk_handler(u,c): await check_and_handle_trial(u,c,'/usr/bin/bot-trialss','Membuat trial Shadowsocks...','Gagal membuat trial Shadowsocks.',get_shadowsocks_menu_keyboard())
 async def topup_saldo_handler(u,c):
     user_id = u.effective_user.id; current_balance = get_user_balance(user_id); wa_number = "6287726917005"
-    caption = (f"💰 **TOP UP SALDO | HOKAGE LEGEND** 💰\n══════════════════════\n\n"
+    caption = (f"💰*TOP UP SALDO | HOKAGE LEGEND*💰\n══════════════════════\n\n"
                f"Saldo Anda Saat Ini: <b>Rp {current_balance:,.0f},-</b>\n\n"
                f"<b><u>Metode Pembayaran:</u></b>\n"
                f"1. Silakan transfer ke rekening di bawah ini atau scan QRIS (jika tersedia).\n"
-               f"   🏦 <b>Bank:</b> [NAMA BANK ANDA]\n"
-               f"   💳 <b>No. Rekening:</b> [NOMOR REKENING ANDA]\n"
-               f"   👤 <b>Atas Nama:</b> [ATAS NAMA PEMILIK REK.]\n\n"
+               f"   🏦 <b>Bank:</b> [BANK MANDIRI]\n"
+               f"   💳 <b>No. Rekening:</b> [164-00-0291548-8]\n"
+               f"   👤 <b>Atas Nama:</b> [DEDEN IRWANSYAH ATMAJA.]\n\n"
                f"<b><u>Setelah Transfer:</u></b>\n"
                f"Mohon kirim bukti transfer beserta User ID Telegram Anda di bawah ini untuk konfirmasi:\n"
                f"<code>{user_id}</code> (klik untuk salin)\n\n"
