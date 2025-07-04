@@ -1,25 +1,24 @@
 #!/bin/bash
 
 # =================================================================================
-# Uninstaller Otomatis untuk Jualan Bot Telegram (Final)
-# Developer By : Hokage Legend.
+# Uninstaller Otomatis Jualan Bot (Final & Aman)
+# Menghapus semua file dan layanan yang dibuat oleh installer.sh
 # =================================================================================
 
-# --- Warna untuk Output ---
+# --- Variabel dan Fungsi Bantuan ---
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-# --- Fungsi ---
-info() { echo -e "${CYAN}[INFO]${NC} $1"; }
+info() { echo -e "\n${CYAN}[INFO]${NC} $1"; }
 success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
 warning() { echo -e "${RED}[WARNING]${NC} $1"; }
 
 # --- Cek Root ---
 if [ "$(id -u)" -ne 0 ]; then
-   echo "Skrip ini harus dijalankan sebagai root."
+   warning "Skrip ini harus dijalankan sebagai root. Coba 'sudo ./uninstaller.sh'"
    exit 1
 fi
 
@@ -29,10 +28,15 @@ echo -e "${YELLOW}=====================================================${NC}"
 warning "         PENGHAPUSAN JUALAN BOT TELEGRAM"
 echo -e "${YELLOW}=====================================================${NC}"
 echo ""
-warning "Skrip ini akan MENGHAPUS secara permanen komponen bot."
-info "Paket Nginx TIDAK akan dihapus."
+warning "Skrip ini akan MENGHAPUS secara permanen:"
+echo "  - Layanan systemd (jualan_bot.service)"
+echo "  - Semua skrip bot (Python & Bash)"
+echo "  - Database bot (jualan.db)"
+echo "  - Lingkungan virtual Python (jualanbot_env)"
 echo ""
-read -p "Anda yakin ingin melanjutkan? (ketik 'y' untuk lanjut): " CONFIRMATION
+info "Paket seperti Nginx dan Python TIDAK akan dihapus."
+echo ""
+read -p "Apakah Anda benar-benar yakin ingin melanjutkan? (ketik 'y' untuk lanjut): " CONFIRMATION
 if [ "$CONFIRMATION" != "y" ]; then
     info "Penghapusan dibatalkan."
     exit 0
@@ -40,39 +44,56 @@ fi
 
 # --- Mulai Proses Penghapusan ---
 
-info "1. Menghentikan dan menghapus layanan systemd..."
-systemctl stop jualan_bot.service > /dev/null 2>&1
-systemctl disable jualan_bot.service > /dev/null 2>&1
-rm -f /etc/systemd/system/jualan_bot.service
-systemctl daemon-reload
-success "Layanan bot berhasil dihentikan dan dihapus."
+info "1. Menghentikan dan menonaktifkan layanan jualan_bot.service..."
+systemctl stop jualan_bot.service > /dev/null 2>&1 || true
+systemctl disable jualan_bot.service > /dev/null 2>&1 || true
+success "Layanan bot berhasil dihentikan dan dinonaktifkan."
 
-info "2. Menghapus file-file bot..."
+info "2. Menghapus semua file bot dan direktori..."
+
+# Daftar lengkap semua skrip yang diunduh oleh installer
 FILES_TO_REMOVE=(
     "/usr/bin/jualan.py" "/usr/bin/jualan.db"
-    "/usr/bin/addss-bot" "/usr/bin/addssh-bot" "/usr/bin/addvless-bot" "/usr/bin/addws-bot"
-    "/usr/bin/bot-backup" "/usr/bin/bot-cek-login-ssh" "/usr/bin/bot-trial" "/usr/bin/bot-trialtrojan"
-    "/usr/bin/bot-trialvless" "/usr/bin/bot-trialws" "/usr/bin/bot-trialss" "/usr/bin/bot-vps-info"
+    "/usr/bin/addss-bot" "/usr/bin/addssh-bot" "/usr/bin/addvless-bot"
+    "/usr/bin/addws-bot" "/usr/bin/bot-backup" "/usr/bin/bot-cek-login-ssh"
+    "/usr/bin/bot-trial" "/usr/bin/bot-trialtrojan" "/usr/bin/bot-trialvless"
+    "/usr/bin/bot-trialws" "/usr/bin/bot-trialss" "/usr/bin/bot-vps-info"
     "/usr/bin/resservice" "/usr/bin/bot-cek-vless" "/usr/bin/bot-cek-vmess"
+    "/usr/bin/bot-delvless" "/usr/bin/bot-del-vmess" "/usr/bin/bot-del-trojan"
+    "/usr/bin/bot-del-ss" "/usr/bin/bot-delssh" "/usr/bin/bot-list-vless"
+    "/usr/bin/bot-list-vmess" "/usr/bin/bot-list-trojan" "/usr/bin/bot-list-shadowsocks"
+    "/usr/bin/bot-list-ssh" "/usr/bin/bot-cek-tr" "/usr/bin/bot-cek-ss"
+    "/usr/bin/bot-clearcache" "/usr/bin/bot-restore"
 )
+
 for file in "${FILES_TO_REMOVE[@]}"; do
-    if [ -f "$file" ]; then rm -f "$file"; fi
+    if [ -f "$file" ]; then
+        rm -f "$file"
+        echo "  - File ${file} dihapus."
+    fi
 done
 
 if [ -d "/usr/bin/jualanbot_env" ]; then
     rm -rf "/usr/bin/jualanbot_env"
+    echo "  - Direktori /usr/bin/jualanbot_env dihapus."
 fi
-success "Semua file bot dan lingkungan virtual berhasil dihapus."
 
-info "3. Opsi untuk menghapus paket 'at'..."
-read -p "Apakah Anda ingin menghapus layanan 'at' (penjadwal tugas)? (y/n): " REMOVE_AT
-if [ "$REMOVE_AT" == "y" ]; then
-    apt-get purge --auto-remove at -y > /dev/null 2>&1
-    success "'at' berhasil dihapus."
-else
-    info "'at' tidak dihapus."
+# Hapus juga skrip tes lisensi jika ada
+if [ -f "/usr/bin/cek_lisensi.py" ]; then
+    rm -f /usr/bin/cek_lisensi.py
+    echo "  - File cek_lisensi.py dihapus."
 fi
+
+success "Semua file bot berhasil dihapus."
+
+info "3. Menghapus file layanan systemd..."
+rm -f /etc/systemd/system/jualan_bot.service
+systemctl daemon-reload
+success "File layanan berhasil dihapus dari systemd."
 
 echo ""
-success "Proses penghapusan Jualan Bot telah selesai."
-info "ok..cuyy...sudah terhapus."
+success "==============================================="
+success "  PROSES PENGHAPUSAN TELAH SELESAI"
+success "==============================================="
+info "Server Anda sekarang sudah bersih dari file-file bot."
+info "Anda bisa menjalankan kembali installer.sh untuk instalasi baru."
