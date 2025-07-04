@@ -1,7 +1,7 @@
 #!/bin/bash
-
 # =================================================================================
-# Installer Otomatis Jualan Bot v8 (Perbaikan Fungsi & Deteksi OS)
+# Installer Otomatis Jualan Bot v9 (Final Definitif)
+# - Perbaikan alur systemd untuk instalasi baru.
 # =================================================================================
 
 # --- Variabel dan Fungsi Bantuan ---
@@ -11,13 +11,12 @@ RED='\033[0;31m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-# Keluar sofort jika ada error
 set -e
 
 info() { echo -e "\n${CYAN}[INFO]${NC} $1"; }
 success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
 error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
-warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; } # FIX: Menambahkan fungsi yang hilang
+warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
 
 # --- Cek Root ---
 if [ "$(id -u)" -ne 0 ]; then
@@ -32,12 +31,12 @@ MYIP=$(curl -s ipv4.icanhazip.com)
 
 IZIN_LIST=$(curl -sL "$IZIN_URL")
 if [ -z "$IZIN_LIST" ]; then
-    error "Gagal mengambil daftar izin dari GitHub. Pastikan link repositori benar dan bisa diakses."
+    error "Gagal mengambil daftar izin dari GitHub."
 fi
 
 LICENSE_LINE=$(echo "$IZIN_LIST" | grep -w "$MYIP")
 if [ -z "$LICENSE_LINE" ]; then
-    error "IP Anda ($MYIP) TIDAK TERDAFTAR.\nInstalasi dibatalkan. Silakan hubungi pemilik skrip untuk pendaftaran."
+    error "IP Anda ($MYIP) TIDAK TERDAFTAR.\nInstalasi dibatalkan. Silakan hubungi pemilik skrip."
 fi
 
 USERNAME=$(echo "$LICENSE_LINE" | awk '{print $1}')
@@ -81,23 +80,10 @@ BOT_DIR="/usr/bin"
 # --- Proses Instalasi ---
 
 info "1. Menginstal Dependensi..."
-if [ -f /etc/os-release ]; then
-    source /etc/os-release
-    info "OS Terdeteksi: $PRETTY_NAME"
-else
-    error "Tidak dapat mendeteksi OS. File /etc/os-release tidak ditemukan."
-fi
-
-if [[ "$ID" == "ubuntu" && "$VERSION_ID" == "24.04" ]]; then
-    VENV_PKG="python3.12-venv"
-    info "Menggunakan paket venv untuk Ubuntu 24.04."
-elif [[ "$ID" == "debian" && "$VERSION_ID" == "12" ]]; then
-    VENV_PKG="python3.11-venv"
-    info "Menggunakan paket venv untuk Debian 12."
-else
-    VENV_PKG="python3-venv"
-    warning "OS Anda tidak terdaftar secara spesifik. Mencoba menggunakan paket generik '$VENV_PKG'."
-fi
+source /etc/os-release
+if [[ "$ID" == "ubuntu" && "$VERSION_ID" == "24.04" ]]; then VENV_PKG="python3.12-venv"
+elif [[ "$ID" == "debian" && "$VERSION_ID" == "12" ]]; then VENV_PKG="python3.11-venv"
+else VENV_PKG="python3-venv"; warning "OS tidak terdeteksi secara spesifik, menggunakan paket python3-venv generik."; fi
 
 apt-get update
 apt-get install -y python3 python3-pip "$VENV_PKG" nginx at curl jq
@@ -161,8 +147,8 @@ success "File layanan systemd berhasil dibuat."
 
 info "7. Menyelesaikan instalasi dan menjalankan layanan..."
 systemctl daemon-reload
-systemctl reset-failed jualan_bot.service
-systemctl enable jualan_bot.service > /dev/null 2>&1
+# FIX: Menghapus baris 'reset-failed' yang tidak perlu untuk instalasi baru
+systemctl enable jualan_bot.service
 systemctl start jualan_bot.service
 
 systemctl enable nginx > /dev/null 2>&1; systemctl restart nginx
