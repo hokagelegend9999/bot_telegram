@@ -18,6 +18,7 @@ rm bot.*
 apt update && apt upgrade
 apt install neofetch -y
 apt install python3 python3-pip git
+sudo pip3 install telethon --break-system-packages
 cd /usr/bin
 wget https://raw.githubusercontent.com/hokagelegend9999/bot_telegram/refs/heads/main/Bot/kyt.zip
 unzip bot.zip
