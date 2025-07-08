@@ -11,7 +11,7 @@ Jika Xray Terjadi Error (config json-file tempt -file service )
 
 ```
 rm install
-wget https://github.com/hokagelegend9999/bot_telegram/raw/refs/heads/main/Bot/kyt.sh && chmod +x kyt.sh && ./kyt.sh
+wget https://raw.githubusercontent.com/hokagelegend9999/bot_telegram/refs/heads/main/Bot/kyt.sh && chmod +x kyt.sh && ./kyt.sh
 ```
 ## HAPUS SCRIPT
 
