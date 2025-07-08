@@ -1,57 +1,70 @@
 #!/bin/bash
-NS=$( cat /etc/xray/dns )
-PUB=$( cat /etc/slowdns/server.pub )
-domain=$(cat /etc/xray/domain)
-#color
+# Script Installer Bot Panel - Versi Perbaikan Final
 
-cd /etc/systemd/system/
-rm -rf kyt.service
-cd
-grenbo="\e[92;1m"
-NC='\e[0m'
-#install
-cd /usr/bin
-rm -rf kyt
-rm kyt.*
-rm -rf bot
-rm bot.*
-apt update && apt upgrade
-apt install neofetch -y
-apt install python3 python3-pip git
-cd /usr/bin
-wget https://raw.githubusercontent.com/hokagelegend9999/bot_telegram/refs/heads/main/Bot/bot.zip
-unzip bot.zip
-mv bot/* /usr/bin
-chmod +x /usr/bin/*
-rm -rf bot.zip
+# --- 1. PEMBERSIHAN INSTALASI LAMA ---
+echo "Membersihkan instalasi lama..."
+sudo systemctl stop kyt.service > /dev/null 2>&1
+sudo systemctl disable kyt.service > /dev/null 2>&1
+sudo rm -f /etc/systemd/system/kyt.service
+sudo rm -rf /usr/bin/kyt /usr/bin/bot
+sudo rm -f /usr/bin/bot-*
+sudo rm -rf /etc/bot
+
+# --- 2. INSTALASI DEPENDENSI DASAR ---
+echo "Menginstall dependensi sistem..."
+sudo apt-get update > /dev/null 2>&1
+sudo apt-get install -y python3 python3-pip git unzip neofetch lolcat figlet
+
+# --- 3. MENGUNDUH & MENATA KEDUA KOMPONEN BOT ---
+echo "Mengunduh dan menata file bot..."
+cd /tmp
+# Hapus sisa unduhan lama
+rm -rf kyt kyt.zip bot bot.zip
+
+# Mengunduh Aplikasi Utama (kyt.zip)
+wget -q -O kyt.zip https://raw.githubusercontent.com/hokagelegend9999/bot_telegram/main/Bot/kyt.zip
+# Mengunduh Skrip Bantuan (bot.zip)
+wget -q -O bot.zip https://raw.githubusercontent.com/hokagelegend9999/bot_telegram/main/Bot/bot.zip
+
+# Ekstrak kedua file zip
+unzip -o kyt.zip
+unzip -o bot.zip
+
+# Pindahkan file ke lokasi yang benar
+sudo mv kyt /usr/bin/     # Memindahkan aplikasi utama ke /usr/bin/kyt
+sudo mv bot/* /usr/bin/    # Memindahkan semua skrip bantuan ke /usr/bin/
+sudo chmod +x /usr/bin/bot* # Memberikan izin eksekusi
+
+# --- 4. INSTALASI DEPENDENSI PYTHON ---
+echo "Menginstall library Python..."
+# Menggunakan requirements.txt dari aplikasi utama
+sudo pip3 install --break-system-packages -r /usr/bin/kyt/requirements.txt
+
+# --- 5. KONFIGURASI BOT ---
+export domain=$(cat /etc/xray/domain)
+export NS=$(cat /etc/xray/dns)
+export PUB=$(cat /etc/slowdns/server.pub)
 clear
-wget https://raw.githubusercontent.com/hokagelegend9999/bot_telegram/refs/heads/main/Bot/kyt.zip
-unzip kyt.zip
-pip3 install -r kyt/requirements.txt
+figlet "Setup Bot" | lolcat
+echo -e "\033[1;36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+read -e -p "Masukkan Bot Token Anda : " bottoken
+read -e -p "Masukkan ID Telegram Admin Anda : " admin
 
-#isi data
-echo ""
-figlet  Newbie Vpn  | lolcat
-echo -e "\033[1;36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
-echo -e " \e[1;97;101m          ADD BOT PANEL          \e[0m"
-echo -e "\033[1;36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
-echo -e "${grenbo}Tutorial Creat Bot and ID Telegram${NC}"
-echo -e "${grenbo}[*] Creat Bot and Token Bot : @BotFather${NC}"
-echo -e "${grenbo}[*] Info Id Telegram : @MissRose_bot , perintah /info${NC}"
-echo -e "\033[1;36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
-read -e -p "[*] Input your Bot Token : " bottoken
-read -e -p "[*] Input Your Id Telegram :" admin
-echo -e BOT_TOKEN='"'$bottoken'"' >> /usr/bin/kyt/var.txt
-echo -e ADMIN='"'$admin'"' >> /usr/bin/kyt/var.txt
-echo -e DOMAIN='"'$domain'"' >> /usr/bin/kyt/var.txt
-echo -e PUB='"'$PUB'"' >> /usr/bin/kyt/var.txt
-echo -e HOST='"'$NS'"' >> /usr/bin/kyt/var.txt
-echo -e "#bot# $bottoken $admin" >/etc/bot/.bot.db
-clear
+# Membuat direktori dan file konfigurasi bot
+sudo mkdir -p /etc/bot
+echo -e "#bot# $bottoken $admin" | sudo tee /etc/bot/.bot.db
+# Menulis konfigurasi ke file var.txt di dalam folder aplikasi
+echo -e BOT_TOKEN='"'$bottoken'"' | sudo tee /usr/bin/kyt/var.txt
+echo -e ADMIN='"'$admin'"' | sudo tee -a /usr/bin/kyt/var.txt
+echo -e DOMAIN='"'$domain'"' | sudo tee -a /usr/bin/kyt/var.txt
+echo -e PUB='"'$PUB'"' | sudo tee -a /usr/bin/kyt/var.txt
+echo -e HOST='"'$NS'"' | sudo tee -a /usr/bin/kyt/var.txt
 
-cat > /etc/systemd/system/kyt.service << END
+# --- 6. MEMBUAT & MENJALANKAN SERVICE ---
+echo "Membuat dan menjalankan servis bot..."
+sudo cat > /etc/systemd/system/kyt.service << END
 [Unit]
-Description=Simple kyt - @kyt
+Description=Kyt Telegram Bot
 After=network.target
 
 [Service]
@@ -63,20 +76,21 @@ Restart=always
 WantedBy=multi-user.target
 END
 
-systemctl start kyt 
-systemctl enable kyt
-systemctl restart kyt
-cd /root
-rm -rf kyt.sh
-echo "Done"
-echo "Your Data Bot"
-echo -e "==============================="
-echo "Token Bot         : $bottoken"
-echo "Admin          : $admin"
-echo "Domain        : $domain"
-echo "BY        : Tunneling"
-echo -e "==============================="
-echo "Setting done"
-clear
+sudo systemctl daemon-reload
+sudo systemctl enable kyt.service
+sudo systemctl restart kyt.service
 
-echo " Installations complete, type /menu on your bot"
+# --- 7. FINALISASI ---
+# Membersihkan file sisa di /tmp
+rm -rf /tmp/kyt /tmp/kyt.zip /tmp/bot /tmp/bot.zip
+
+clear
+echo "================================================"
+echo "      INSTALASI BOT SELESAI"
+echo "================================================"
+echo "Token Bot     : $bottoken"
+echo "Admin ID      : $admin"
+echo ""
+echo "Bot Anda sudah berjalan."
+echo "Ketik /start pada bot Telegram Anda untuk memulai."
+echo "================================================"
